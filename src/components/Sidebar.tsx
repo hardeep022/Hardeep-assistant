@@ -45,6 +45,11 @@ export function Sidebar() {
     setEditingId(null);
   };
 
+  const handleTogglePin = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    dispatch({ type: 'TOGGLE_PIN', conversationId: id });
+  };
+
   const filteredConversations = conversations.filter(c => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -54,10 +59,17 @@ export function Sidebar() {
     );
   });
 
-  // Group conversations by relative date
+  const pinnedConversations = filteredConversations.filter(c => c.pinned);
+  const unpinnedConversations = filteredConversations.filter(c => !c.pinned);
+
+  // Group conversations by relative date (pinned always at top)
   const groups: { label: string; items: typeof conversations }[] = [];
+  if (pinnedConversations.length > 0) {
+    groups.push({ label: '📌 Pinned', items: pinnedConversations });
+  }
+
   const seen = new Set<string>();
-  for (const conv of filteredConversations) {
+  for (const conv of unpinnedConversations) {
     const label = formatRelativeDate(conv.updatedAt);
     if (!seen.has(label)) {
       seen.add(label);
@@ -145,7 +157,7 @@ export function Sidebar() {
                 onKeyDown={e => e.key === 'Enter' && handleSelect(conv.id)}
               >
                 <span className="conv-item-icon">
-                  {conv.messages.length === 0 ? '💬' : '🗨️'}
+                  {conv.pinned ? '📌' : conv.messages.length === 0 ? '💬' : '🗨️'}
                 </span>
                 <div className="conv-item-body">
                   {editingId === conv.id ? (
@@ -176,6 +188,15 @@ export function Sidebar() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <button
+                    className="conv-delete-btn"
+                    onClick={e => handleTogglePin(e, conv.id)}
+                    title={conv.pinned ? 'Unpin conversation' : 'Pin conversation'}
+                    aria-label={conv.pinned ? 'Unpin conversation' : 'Pin conversation'}
+                    style={{ opacity: conv.pinned ? 1 : 0.6 }}
+                  >
+                    {conv.pinned ? '📍' : '📌'}
+                  </button>
                   <button
                     className="conv-delete-btn"
                     onClick={e => startRename(e, conv.id, conv.title)}

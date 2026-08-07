@@ -38,6 +38,7 @@ type Action =
   | { type: 'TRUNCATE_TO_MESSAGE'; conversationId: string; messageId: string }
   | { type: 'SET_TITLE'; conversationId: string; title: string }
   | { type: 'SET_MODEL'; conversationId: string; model: string }
+  | { type: 'TOGGLE_PIN'; conversationId: string }
   | { type: 'UPDATE_SETTINGS'; settings: Partial<Settings> }
   | { type: 'SET_SETTINGS_OPEN'; open: boolean }
   | { type: 'HYDRATE'; state: AppState };
@@ -144,6 +145,15 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         conversations: state.conversations.map(c =>
           c.id === action.conversationId ? { ...c, model: action.model } : c
+        ),
+      };
+    }
+
+    case 'TOGGLE_PIN': {
+      return {
+        ...state,
+        conversations: state.conversations.map(c =>
+          c.id === action.conversationId ? { ...c, pinned: !c.pinned } : c
         ),
       };
     }

@@ -44,6 +44,7 @@ export interface Conversation {
   updatedAt: number;
   model: string;
   systemPrompt?: string;
+  pinned?: boolean;
 }
 
 export interface Settings {
