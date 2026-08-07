@@ -287,6 +287,31 @@ export function SettingsModal() {
                 />
               </div>
 
+              <div className="settings-field" style={{ paddingTop: '8px' }}>
+                <label className="settings-label" style={{ color: 'var(--error)' }}>Danger Zone</label>
+                <button
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to delete all conversations? This action cannot be undone.')) {
+                      dispatch({ type: 'CLEAR_ALL_CHATS' });
+                      handleClose();
+                    }
+                  }}
+                  style={{
+                    background: 'rgba(248,113,113,0.1)',
+                    border: '1px solid rgba(248,113,113,0.3)',
+                    color: 'var(--error)',
+                    padding: '8px 14px',
+                    borderRadius: 'var(--r-sm)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    width: 'fit-content',
+                  }}
+                >
+                  🗑️ Delete All Conversations
+                </button>
+              </div>
+
               <div className="settings-info-box">
                 API keys are stored encrypted using your system keychain. Never sent anywhere except to the AI provider directly.
               </div>

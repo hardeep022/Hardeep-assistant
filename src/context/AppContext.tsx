@@ -31,6 +31,7 @@ type Action =
   | { type: 'NEW_CHAT'; id?: string; model?: string }
   | { type: 'SELECT_CHAT'; id: string }
   | { type: 'DELETE_CHAT'; id: string }
+  | { type: 'CLEAR_ALL_CHATS' }
   | { type: 'ADD_MESSAGE'; conversationId: string; message: Message }
   | { type: 'DELETE_MESSAGE'; conversationId: string; messageId: string }
   | { type: 'EDIT_MESSAGE'; conversationId: string; messageId: string; newContent: string }
@@ -77,6 +78,9 @@ function reducer(state: AppState, action: Action): AppState {
           : state.activeConversationId;
       return { ...state, conversations: filtered, activeConversationId: activeId };
     }
+
+    case 'CLEAR_ALL_CHATS':
+      return { ...state, conversations: [], activeConversationId: null };
 
     case 'ADD_MESSAGE': {
       return {

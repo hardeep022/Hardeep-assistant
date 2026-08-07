@@ -58,46 +58,111 @@ export function ChatView() {
     }
   };
 
+  const exportAsMarkdown = () => {
+    if (!activeConversation) return;
+    let md = `# ${activeConversation.title}\n\n`;
+    md += `*Exported from Hardeep Assistant on ${new Date().toLocaleString()}*\n\n---\n\n`;
+    for (const m of activeConversation.messages) {
+      const roleName = m.role === 'user' ? 'User' : 'Assistant';
+      md += `### ${roleName}\n${m.content}\n\n`;
+    }
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeConversation.title.replace(/[^a-z0-9_-]/gi, '_')}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportAsJSON = () => {
+    if (!activeConversation) return;
+    const json = JSON.stringify(activeConversation, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeConversation.title.replace(/[^a-z0-9_-]/gi, '_')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const hasMessages = messages.length > 0;
 
   return (
     <main className="chat-view">
       {/* Header */}
       {activeConversation && (
-        <div className="chat-header">
-          {isEditingTitle ? (
-            <input
-              type="text"
-              value={headerTitle}
-              onChange={e => setHeaderTitle(e.target.value)}
-              onBlur={saveHeaderTitle}
-              onKeyDown={e => e.key === 'Enter' && saveHeaderTitle()}
+        <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {isEditingTitle ? (
+              <input
+                type="text"
+                value={headerTitle}
+                onChange={e => setHeaderTitle(e.target.value)}
+                onBlur={saveHeaderTitle}
+                onKeyDown={e => e.key === 'Enter' && saveHeaderTitle()}
+                style={{
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--accent)',
+                  borderRadius: 'var(--r-xs)',
+                  padding: '4px 8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                }}
+                autoFocus
+              />
+            ) : (
+              <span
+                className="chat-title"
+                onClick={handleStartEditTitle}
+                style={{ cursor: 'pointer' }}
+                title="Click to edit title"
+              >
+                {activeConversation.title} ✏️
+              </span>
+            )}
+            {model && (
+              <span className="chat-model-badge">
+                {model.name}
+              </span>
+            )}
+          </div>
+
+          {/* Export Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={exportAsMarkdown}
               style={{
                 background: 'var(--bg-input)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--accent)',
-                borderRadius: 'var(--r-xs)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
                 padding: '4px 8px',
-                fontSize: '14px',
-                fontWeight: 600,
+                borderRadius: 'var(--r-xs)',
+                fontSize: '11px',
+                cursor: 'pointer',
               }}
-              autoFocus
-            />
-          ) : (
-            <span
-              className="chat-title"
-              onClick={handleStartEditTitle}
-              style={{ cursor: 'pointer' }}
-              title="Click to edit title"
+              title="Export as Markdown"
             >
-              {activeConversation.title} ✏️
-            </span>
-          )}
-          {model && (
-            <span className="chat-model-badge">
-              {model.name}
-            </span>
-          )}
+              📥 .MD
+            </button>
+            <button
+              onClick={exportAsJSON}
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '4px 8px',
+                borderRadius: 'var(--r-xs)',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+              title="Export as JSON"
+            >
+              📥 .JSON
+            </button>
+          </div>
         </div>
       )}
 
