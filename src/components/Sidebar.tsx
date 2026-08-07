@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 
 function formatRelativeDate(timestamp: number): string {
@@ -14,6 +15,10 @@ export function Sidebar() {
   const { state, dispatch } = useApp();
   const { conversations, activeConversationId } = state;
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+
   const handleNewChat = () => {
     dispatch({ type: 'NEW_CHAT' });
   };
@@ -27,10 +32,32 @@ export function Sidebar() {
     dispatch({ type: 'DELETE_CHAT', id });
   };
 
+  const startRename = (e: React.MouseEvent, id: string, title: string) => {
+    e.stopPropagation();
+    setEditingId(id);
+    setEditTitle(title);
+  };
+
+  const saveRename = (id: string) => {
+    if (editTitle.trim()) {
+      dispatch({ type: 'SET_TITLE', conversationId: id, title: editTitle.trim() });
+    }
+    setEditingId(null);
+  };
+
+  const filteredConversations = conversations.filter(c => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      c.title.toLowerCase().includes(q) ||
+      c.messages.some(m => m.content.toLowerCase().includes(q))
+    );
+  });
+
   // Group conversations by relative date
   const groups: { label: string; items: typeof conversations }[] = [];
   const seen = new Set<string>();
-  for (const conv of conversations) {
+  for (const conv of filteredConversations) {
     const label = formatRelativeDate(conv.updatedAt);
     if (!seen.has(label)) {
       seen.add(label);
@@ -54,16 +81,56 @@ export function Sidebar() {
           </svg>
           New Chat
         </button>
+
+        {/* Search Bar */}
+        <div style={{ padding: '8px 0 0 0', position: 'relative' }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search chats…"
+            style={{
+              width: '100%',
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-sm)',
+              padding: '6px 28px 6px 10px',
+              fontSize: '12px',
+              color: 'var(--text-primary)',
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '14px',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Conversation List */}
       <nav className="conv-list" aria-label="Conversations">
-        {conversations.length === 0 && (
+        {conversations.length === 0 ? (
           <p style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '24px 16px' }}>
             No conversations yet.
             <br />Start a new chat above!
           </p>
-        )}
+        ) : filteredConversations.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '24px 16px' }}>
+            No matches found.
+          </p>
+        ) : null}
 
         {groups.map(group => (
           <div key={group.label}>
@@ -81,24 +148,56 @@ export function Sidebar() {
                   {conv.messages.length === 0 ? '💬' : '🗨️'}
                 </span>
                 <div className="conv-item-body">
-                  <div className="conv-item-title">{conv.title}</div>
+                  {editingId === conv.id ? (
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      onBlur={() => saveRename(conv.id)}
+                      onKeyDown={e => e.key === 'Enter' && saveRename(conv.id)}
+                      style={{
+                        background: 'var(--bg-input)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--accent)',
+                        borderRadius: 'var(--r-xs)',
+                        padding: '2px 4px',
+                        fontSize: '12px',
+                        width: '100%',
+                      }}
+                      autoFocus
+                      onClick={e => e.stopPropagation()}
+                    />
+                  ) : (
+                    <div className="conv-item-title">{conv.title}</div>
+                  )}
                   <div className="conv-item-time">
                     {conv.messages.length} message{conv.messages.length !== 1 ? 's' : ''}
                   </div>
                 </div>
-                <button
-                  className="conv-delete-btn"
-                  onClick={e => handleDelete(e, conv.id)}
-                  title="Delete conversation"
-                  aria-label="Delete conversation"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6M14 11v6" />
-                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                  </svg>
-                </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <button
+                    className="conv-delete-btn"
+                    onClick={e => startRename(e, conv.id, conv.title)}
+                    title="Rename chat"
+                    aria-label="Rename chat"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className="conv-delete-btn"
+                    onClick={e => handleDelete(e, conv.id)}
+                    title="Delete conversation"
+                    aria-label="Delete conversation"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))}
           </div>

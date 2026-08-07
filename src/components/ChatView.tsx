@@ -18,9 +18,26 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [headerTitle, setHeaderTitle] = useState('');
+
   const messages = activeConversation?.messages ?? [];
   const modelId = activeConversation?.model || state.settings.defaultModel;
   const model = MODELS.find(m => m.id === modelId);
+
+  const handleStartEditTitle = () => {
+    if (activeConversation) {
+      setHeaderTitle(activeConversation.title);
+      setIsEditingTitle(true);
+    }
+  };
+
+  const saveHeaderTitle = () => {
+    if (activeConversation && headerTitle.trim()) {
+      dispatch({ type: 'SET_TITLE', conversationId: activeConversation.id, title: headerTitle.trim() });
+    }
+    setIsEditingTitle(false);
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -36,7 +53,6 @@ export function ChatView() {
   const handleSuggestion = (text: string) => {
     if (!activeConversation) {
       createConversationAndSend(text);
-      // Need to wait for state update — use a small trick
     } else {
       sendMessage(text);
     }
@@ -49,7 +65,34 @@ export function ChatView() {
       {/* Header */}
       {activeConversation && (
         <div className="chat-header">
-          <span className="chat-title">{activeConversation.title}</span>
+          {isEditingTitle ? (
+            <input
+              type="text"
+              value={headerTitle}
+              onChange={e => setHeaderTitle(e.target.value)}
+              onBlur={saveHeaderTitle}
+              onKeyDown={e => e.key === 'Enter' && saveHeaderTitle()}
+              style={{
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--r-xs)',
+                padding: '4px 8px',
+                fontSize: '14px',
+                fontWeight: 600,
+              }}
+              autoFocus
+            />
+          ) : (
+            <span
+              className="chat-title"
+              onClick={handleStartEditTitle}
+              style={{ cursor: 'pointer' }}
+              title="Click to edit title"
+            >
+              {activeConversation.title} ✏️
+            </span>
+          )}
           {model && (
             <span className="chat-model-badge">
               {model.name}
