@@ -12,6 +12,9 @@ interface Props {
   message: Message;
   isStreaming?: boolean;
   streamingContent?: string;
+  onRegenerate?: (id: string) => void;
+  onEdit?: (id: string, newContent: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 const RUNNABLE_LANGS = ['html', 'css', 'js', 'javascript', 'ts', 'typescript', 'svg', 'xml', 'python', 'py'];
@@ -104,13 +107,29 @@ function formatTime(timestamp: number) {
     ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function MessageBubble({ message, isStreaming, streamingContent }: Props) {
+export function MessageBubble({ message, isStreaming, streamingContent, onRegenerate, onEdit, onDelete }: Props) {
   const isUser = message.role === 'user';
   const isThinking = !isUser && isStreaming && !streamingContent;
   const content = (!isUser && isStreaming) ? streamingContent || '' : message.content;
   const { speakingId, speak } = useTTS();
 
+  const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(message.content);
+
   const isSpeaking = speakingId === message.id;
+
+  const handleCopyText = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editValue.trim()) return;
+    setIsEditing(false);
+    onEdit?.(message.id, editValue.trim());
+  };
 
   return (
     <div className={`msg-row ${message.role}`}>
@@ -124,6 +143,40 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Props)
         <div className={`msg-bubble${message.isError ? ' error' : ''}`}>
           {isThinking ? (
             <ThinkingDots />
+          ) : isEditing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', minWidth: '280px' }}>
+              <textarea
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--accent)',
+                  borderRadius: 'var(--r-sm)',
+                  padding: '8px 12px',
+                  fontSize: '14px',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  minHeight: '60px',
+                }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => { setIsEditing(false); setEditValue(message.content); }}
+                  style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: '4px 10px', borderRadius: 'var(--r-xs)', cursor: 'pointer', fontSize: '12px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  style={{ background: 'var(--accent)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: 'var(--r-xs)', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                >
+                  Save & Resend
+                </button>
+              </div>
+            </div>
           ) : isUser ? (
             <span className="msg-content">{content}</span>
           ) : (
@@ -166,9 +219,9 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Props)
           )}
         </div>
 
-        {/* Meta */}
-        {!isStreaming && (
-          <div className="msg-meta">
+        {/* Meta & Action Controls */}
+        {!isStreaming && !isEditing && (
+          <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <span>{formatTime(message.timestamp)}</span>
             {message.model && (
               <>
@@ -177,6 +230,7 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Props)
               </>
             )}
 
+            {/* Read Aloud */}
             {!isUser && content && (
               <>
                 <span>·</span>
@@ -190,13 +244,77 @@ export function MessageBubble({ message, isStreaming, streamingContent }: Props)
                     fontSize: '11px',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '4px',
+                    gap: '3px',
                     padding: '2px 4px',
                     borderRadius: '4px',
                   }}
                   title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
                 >
                   {isSpeaking ? '🔊 Speaking…' : '🔈 Read'}
+                </button>
+              </>
+            )}
+
+            {/* Copy Action */}
+            {content && (
+              <>
+                <span>·</span>
+                <button
+                  onClick={handleCopyText}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copied ? 'var(--success)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    padding: '2px 4px',
+                    borderRadius: '4px',
+                  }}
+                  title="Copy message content"
+                >
+                  {copied ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </>
+            )}
+
+            {/* Edit User Message */}
+            {isUser && onEdit && (
+              <>
+                <span>·</span>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px', padding: '2px 4px' }}
+                  title="Edit prompt and resend"
+                >
+                  ✏️ Edit
+                </button>
+              </>
+            )}
+
+            {/* Regenerate Assistant Message */}
+            {!isUser && onRegenerate && (
+              <>
+                <span>·</span>
+                <button
+                  onClick={() => onRegenerate(message.id)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px', padding: '2px 4px' }}
+                  title="Regenerate AI response"
+                >
+                  🔄 Regenerate
+                </button>
+              </>
+            )}
+
+            {/* Delete Message */}
+            {onDelete && (
+              <>
+                <span>·</span>
+                <button
+                  onClick={() => onDelete(message.id)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px', padding: '2px 4px' }}
+                  title="Delete message"
+                >
+                  🗑️ Delete
                 </button>
               </>
             )}

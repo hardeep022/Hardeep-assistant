@@ -9,19 +9,12 @@ export function useChat() {
   const [streamingContent, setStreamingContent] = useState('');
   const abortedRef = useRef(false);
 
-  const sendMessage = useCallback(async (content: string, conversationId?: string) => {
-    const { activeConversationId, conversations, settings } = state;
-    const targetConversationId = conversationId ?? activeConversationId;
-    if (!targetConversationId || isStreaming) return;
-
-    const conversation = conversations.find(c => c.id === targetConversationId);
-    if (!conversation && !conversationId) return;
-    const pendingConversation: Pick<Conversation, 'messages' | 'model'> = conversation ?? {
-      messages: [],
-      model: settings.defaultModel,
-    };
-
-    const modelId = pendingConversation.model || settings.defaultModel;
+  const fetchStream = useCallback(async (
+    targetConversationId: string,
+    apiMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    modelId: string
+  ) => {
+    const { settings } = state;
     const staticModel = MODELS.find(m => m.id === modelId);
     const modelInfo = staticModel || {
       id: modelId,
@@ -32,7 +25,6 @@ export function useChat() {
 
     const isDesktop = Boolean(window.nova);
 
-    // Ollama is local — no API key needed
     if (!isDesktop && modelInfo.provider !== 'ollama') {
       dispatch({
         type: 'ADD_MESSAGE',
@@ -48,33 +40,10 @@ export function useChat() {
       return;
     }
 
-    // Add user message
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content,
-      timestamp: Date.now(),
-    };
-    dispatch({ type: 'ADD_MESSAGE', conversationId: targetConversationId, message: userMessage });
-
-    // Auto-title from first user message
-    if (pendingConversation.messages.length === 0) {
-      const title = content.length > 48 ? content.slice(0, 48) + '…' : content;
-      dispatch({ type: 'SET_TITLE', conversationId: targetConversationId, title });
-    }
-
-    // Start streaming
     setIsStreaming(true);
     setStreamingContent('');
     abortedRef.current = false;
 
-    // Prepare message history for API
-    const apiMessages = [...pendingConversation.messages, userMessage].map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    // If window.nova (Electron IPC) is available:
     if (window.nova) {
       window.nova.clearListeners?.();
 
@@ -127,7 +96,6 @@ export function useChat() {
         ollamaUrl: settings.ollamaUrl || 'http://localhost:11434',
       });
     } else if (modelInfo.provider === 'ollama') {
-      // Fallback for browser mode: direct fetch to Ollama API
       try {
         const ollamaUrl = settings.ollamaUrl || 'http://localhost:11434';
         const res = await fetch(`${ollamaUrl}/api/chat`, {
@@ -162,7 +130,7 @@ export function useChat() {
                   setStreamingContent(prev => prev + chunk);
                 }
               } catch {
-                // Ignore an incomplete JSON chunk and continue reading the stream.
+                // Ignore incomplete JSON frame
               }
             }
           }
@@ -215,7 +183,86 @@ export function useChat() {
       setIsStreaming(false);
       setStreamingContent('');
     }
-  }, [state, dispatch, isStreaming]);
+  }, [state, dispatch]);
+
+  const sendMessage = useCallback(async (content: string, conversationId?: string) => {
+    const { activeConversationId, conversations, settings } = state;
+    const targetConversationId = conversationId ?? activeConversationId;
+    if (!targetConversationId || isStreaming) return;
+
+    const conversation = conversations.find(c => c.id === targetConversationId);
+    if (!conversation && !conversationId) return;
+    const pendingConversation: Pick<Conversation, 'messages' | 'model'> = conversation ?? {
+      messages: [],
+      model: settings.defaultModel,
+    };
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content,
+      timestamp: Date.now(),
+    };
+    dispatch({ type: 'ADD_MESSAGE', conversationId: targetConversationId, message: userMessage });
+
+    if (pendingConversation.messages.length === 0) {
+      const title = content.length > 48 ? content.slice(0, 48) + '…' : content;
+      dispatch({ type: 'SET_TITLE', conversationId: targetConversationId, title });
+    }
+
+    const apiMessages = [...pendingConversation.messages, userMessage].map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const modelId = pendingConversation.model || settings.defaultModel;
+    await fetchStream(targetConversationId, apiMessages, modelId);
+  }, [state, dispatch, isStreaming, fetchStream]);
+
+  const regenerate = useCallback(async (assistantMessageId: string) => {
+    const { activeConversation, conversations, settings } = state;
+    const conv = activeConversation ?? conversations.find(c => c.messages.some(m => m.id === assistantMessageId));
+    if (!conv || isStreaming) return;
+
+    const msgIdx = conv.messages.findIndex(m => m.id === assistantMessageId);
+    if (msgIdx === -1) return;
+
+    // Truncate to the message before this assistant message
+    const previousMessages = conv.messages.slice(0, msgIdx);
+    if (previousMessages.length === 0) return;
+
+    const targetMsgId = previousMessages[previousMessages.length - 1].id;
+    dispatch({ type: 'TRUNCATE_TO_MESSAGE', conversationId: conv.id, messageId: targetMsgId });
+
+    const apiMessages = previousMessages.map(m => ({ role: m.role, content: m.content }));
+    const modelId = conv.model || settings.defaultModel;
+    await fetchStream(conv.id, apiMessages, modelId);
+  }, [state, dispatch, isStreaming, fetchStream]);
+
+  const editAndResend = useCallback(async (userMessageId: string, newContent: string) => {
+    const { activeConversation, conversations, settings } = state;
+    const conv = activeConversation ?? conversations.find(c => c.messages.some(m => m.id === userMessageId));
+    if (!conv || isStreaming) return;
+
+    dispatch({ type: 'EDIT_MESSAGE', conversationId: conv.id, messageId: userMessageId, newContent });
+
+    const msgIdx = conv.messages.findIndex(m => m.id === userMessageId);
+    if (msgIdx === -1) return;
+
+    const updatedHistory = conv.messages.slice(0, msgIdx + 1).map(m => ({
+      role: m.role,
+      content: m.id === userMessageId ? newContent : m.content,
+    }));
+
+    const modelId = conv.model || settings.defaultModel;
+    await fetchStream(conv.id, updatedHistory, modelId);
+  }, [state, dispatch, isStreaming, fetchStream]);
+
+  const deleteMessage = useCallback((messageId: string) => {
+    const { activeConversationId } = state;
+    if (!activeConversationId) return;
+    dispatch({ type: 'DELETE_MESSAGE', conversationId: activeConversationId, messageId });
+  }, [state, dispatch]);
 
   const stopStreaming = useCallback(() => {
     abortedRef.current = true;
@@ -226,5 +273,5 @@ export function useChat() {
     setStreamingContent('');
   }, []);
 
-  return { sendMessage, isStreaming, streamingContent, stopStreaming };
+  return { sendMessage, regenerate, editAndResend, deleteMessage, isStreaming, streamingContent, stopStreaming };
 }

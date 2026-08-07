@@ -14,7 +14,7 @@ const SUGGESTIONS = [
 
 export function ChatView() {
   const { activeConversation, state, dispatch } = useApp();
-  const { sendMessage, isStreaming, streamingContent, stopStreaming } = useChat();
+  const { sendMessage, regenerate, editAndResend, deleteMessage, isStreaming, streamingContent, stopStreaming } = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
@@ -85,7 +85,13 @@ export function ChatView() {
         <div className="messages-area" ref={messagesRef}>
           <div className="messages-inner">
             {messages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onRegenerate={regenerate}
+                onEdit={editAndResend}
+                onDelete={deleteMessage}
+              />
             ))}
 
             {/* Streaming message */}
