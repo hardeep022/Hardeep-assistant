@@ -275,6 +275,23 @@ export function SettingsModal() {
               </div>
 
               <div className="settings-field">
+                <label className="settings-label">Theme</label>
+                <p className="settings-sublabel">Choose appearance mode for the app</p>
+                <div className="theme-toggle-group">
+                  {(['dark', 'light', 'system'] as const).map(t => (
+                    <button
+                      key={t}
+                      className={`theme-toggle-btn${(local.theme ?? 'dark') === t ? ' active' : ''}`}
+                      onClick={() => setLocal(p => ({ ...p, theme: t }))}
+                    >
+                      {t === 'dark' ? '🌙' : t === 'light' ? '☀️' : '💻'}{' '}
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="settings-field">
                 <label className="settings-label">Global System Instructions</label>
                 <p className="settings-sublabel">Custom persona or instructions given to all AI models</p>
                 <textarea

@@ -211,6 +211,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('nova-state', JSON.stringify(toSave));
   }, [state]);
 
+  // Apply theme to document
+  useEffect(() => {
+    const theme = state.settings.theme ?? 'dark';
+
+    const applyTheme = (resolved: 'dark' | 'light') => {
+      document.body.classList.add('theme-transition');
+      document.documentElement.setAttribute('data-theme', resolved);
+      // Remove transition class after animation completes to avoid interfering with other transitions
+      const timer = setTimeout(() => document.body.classList.remove('theme-transition'), 250);
+      return timer;
+    };
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    if (theme === 'system') {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      const resolved = mql.matches ? 'dark' : 'light';
+      timer = applyTheme(resolved);
+      const handler = (e: MediaQueryListEvent) => { applyTheme(e.matches ? 'dark' : 'light'); };
+      mql.addEventListener('change', handler);
+      return () => { clearTimeout(timer); mql.removeEventListener('change', handler); };
+    } else {
+      timer = applyTheme(theme);
+      return () => clearTimeout(timer);
+    }
+  }, [state.settings.theme]);
+
   const activeConversation =
     state.conversations.find(c => c.id === state.activeConversationId) ?? null;
 

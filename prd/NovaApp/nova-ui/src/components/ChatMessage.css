@@ -1,0 +1,109 @@
+.chat-message {
+  display: flex;
+  gap: var(--space-3);
+  max-width: 800px;
+  margin-bottom: var(--space-4);
+}
+
+.chat-message-user {
+  flex-direction: row-reverse;
+  margin-left: auto;
+}
+
+.chat-message-assistant {
+  margin-right: auto;
+}
+
+/* ── Avatar ── */
+.chat-message-avatar {
+  flex-shrink: 0;
+  padding-top: var(--space-1);
+}
+
+.chat-message-avatar-orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  animation: orbPulse 4s ease-in-out infinite;
+}
+
+/* ── Bubble ── */
+.chat-message-bubble {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  max-width: 75%;
+  position: relative;
+  line-height: 1.6;
+}
+
+.chat-bubble-user {
+  background: var(--color-primary);
+  color: #fff;
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.chat-bubble-assistant {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+/* ── Content ── */
+.chat-message-content {
+  font-size: var(--text-base);
+  word-break: break-word;
+}
+
+.chat-message-content strong {
+  font-weight: var(--weight-semibold);
+}
+
+.chat-message-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.chat-bubble-user .chat-message-content a {
+  color: #e0f2fe;
+}
+
+/* ── Code ── */
+.chat-code-block {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.chat-bubble-user .chat-code-block {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.chat-inline-code {
+  background: rgba(59, 130, 246, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.chat-bubble-user .chat-inline-code {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Time ── */
+.chat-message-time {
+  display: block;
+  font-size: var(--text-xs);
+  margin-top: var(--space-2);
+  opacity: 0.6;
+  text-align: right;
+}

@@ -53,6 +53,7 @@ export interface Settings {
   ollamaUrl: string;
   defaultModel: string;
   systemPrompt?: string;
+  theme?: 'dark' | 'light' | 'system';
 }
 
 export interface ChatPayload {
