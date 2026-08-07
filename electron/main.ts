@@ -2,12 +2,17 @@ import { app, BrowserWindow, ipcMain, safeStorage, shell, globalShortcut, Tray, 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let voiceProcess: ChildProcessWithoutNullStreams | null = null;
+let voiceReady = false;
+let voiceOutputBuffer = "";
+const queuedVoiceCommands: string[] = [];
 
 type Provider = "openai" | "gemini" | "anthropic" | "ollama";
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -52,6 +57,81 @@ function isChatMessages(value: unknown): value is ChatMessage[] {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error";
+}
+
+function sendVoiceEvent(event: Record<string, unknown>) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("voice:event", event);
+}
+
+function getVoiceServicePath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "voice", "voice_service.py")
+    : path.join(__dirname, "../voice/voice_service.py");
+}
+
+function writeVoiceCommand(command: Record<string, unknown>) {
+  const encoded = `${JSON.stringify(command)}\n`;
+  if (!voiceReady || !voiceProcess?.stdin.writable) {
+    queuedVoiceCommands.push(encoded);
+    return;
+  }
+  voiceProcess.stdin.write(encoded);
+}
+
+function startVoiceService() {
+  if (voiceProcess) return;
+  const servicePath = getVoiceServicePath();
+  if (!fs.existsSync(servicePath)) {
+    sendVoiceEvent({ event: "error", message: "Voice runtime is not installed." });
+    return;
+  }
+  const python = process.env.NOVA_PYTHON ?? "python";
+  voiceProcess = spawn(python, [servicePath], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  voiceProcess.stdout.setEncoding("utf8");
+  voiceProcess.stderr.setEncoding("utf8");
+  voiceProcess.stdout.on("data", (data: string) => {
+    voiceOutputBuffer += data;
+    const lines = voiceOutputBuffer.split("\n");
+    voiceOutputBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      try {
+        const event: unknown = JSON.parse(line);
+        if (isRecord(event) && typeof event.event === "string") {
+          if (event.event === "ready") {
+            voiceReady = true;
+            for (const command of queuedVoiceCommands.splice(0)) voiceProcess?.stdin.write(command);
+          }
+          sendVoiceEvent(event);
+        }
+      } catch {
+        // Ignore malformed sidecar output; diagnostics are written to stderr.
+      }
+    }
+  });
+  voiceProcess.stderr.on("data", (data: string) => console.warn("Voice runtime:", data.trim()));
+  voiceProcess.on("error", error => sendVoiceEvent({ event: "error", message: `Voice runtime failed: ${getErrorMessage(error)}` }));
+  voiceProcess.on("exit", code => {
+    voiceProcess = null;
+    voiceReady = false;
+    if (code !== 0 && code !== null) sendVoiceEvent({ event: "error", message: `Voice runtime stopped (${code}).` });
+  });
+}
+
+function stopVoiceService() {
+  if (!voiceProcess) return;
+  if (voiceProcess.stdin.writable) voiceProcess.stdin.write('{"action":"shutdown"}\n');
+  voiceProcess.kill();
+  voiceProcess = null;
+  voiceReady = false;
+  queuedVoiceCommands.length = 0;
+}
+
+function isVoiceCommand(value: unknown): value is { action: "start_ptt" | "stop_ptt" | "set_wake_word" | "speak" | "stop_speaking"; enabled?: boolean; text?: string } {
+  if (!isRecord(value) || typeof value.action !== "string") return false;
+  if (["start_ptt", "stop_ptt", "stop_speaking"].includes(value.action)) return true;
+  if (value.action === "set_wake_word") return typeof value.enabled === "boolean";
+  return value.action === "speak" && typeof value.text === "string" && value.text.length <= 20_000;
 }
 
 function getProviderErrorMessage(body: unknown, fallback: string): string {
@@ -138,6 +218,7 @@ function createWindow() {
 app.whenReady().then(createWindow);
 
 app.on("will-quit", () => {
+  stopVoiceService();
   globalShortcut.unregisterAll();
 });
 
@@ -156,6 +237,15 @@ ipcMain.on("open:external", (_event, value: unknown) => {
   } catch {
     // Invalid external URLs are ignored.
   }
+});
+
+ipcMain.on("voice:command", (_event, command: unknown) => {
+  if (!isVoiceCommand(command)) {
+    sendVoiceEvent({ event: "error", message: "Invalid voice command." });
+    return;
+  }
+  startVoiceService();
+  writeVoiceCommand(command);
 });
 
 // Settings Storage

@@ -34,7 +34,7 @@ export function InputBar({ onSend, isStreaming, onStop }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const langMenuRef = useRef<HTMLDivElement>(null);
 
-  const { isListening, lang, setLang, toggleListening } = useVoice();
+  const { isListening, isWakeWordEnabled, lang, setLang, startListening, stopListening, toggleWakeWord } = useVoice(onSend);
 
   // Fetch installed Ollama models dynamically
   useEffect(() => {
@@ -125,12 +125,6 @@ export function InputBar({ onSend, isStreaming, onStop }: Props) {
         model: modelId,
       });
     }
-  };
-
-  const handleVoiceToggle = () => {
-    toggleListening((text: string) => {
-      setValue(text);
-    });
   };
 
   // Group models by provider
@@ -254,7 +248,10 @@ export function InputBar({ onSend, isStreaming, onStop }: Props) {
             {/* Mic Button */}
             <button
               className={`mic-btn${isListening ? ' listening' : ''}`}
-              onClick={handleVoiceToggle}
+              onPointerDown={startListening}
+              onPointerUp={stopListening}
+              onPointerLeave={isListening ? stopListening : undefined}
+              onPointerCancel={stopListening}
               title={isListening ? 'Stop listening' : `Start mic (${currentLangObj.label})`}
               disabled={isStreaming}
             >
@@ -269,6 +266,16 @@ export function InputBar({ onSend, isStreaming, onStop }: Props) {
                   <line x1="12" y1="19" x2="12" y2="22" />
                 </svg>
               )}
+            </button>
+
+            <button
+              className={`mic-btn${isWakeWordEnabled ? ' listening' : ''}`}
+              onClick={toggleWakeWord}
+              title={isWakeWordEnabled ? 'Disable wake word “Nova”' : 'Enable wake word “Nova”'}
+              disabled={isStreaming}
+              aria-pressed={isWakeWordEnabled}
+            >
+              <span style={{ fontSize: '13px', lineHeight: 1 }}>✦</span>
             </button>
 
             {/* Send / Stop Button */}

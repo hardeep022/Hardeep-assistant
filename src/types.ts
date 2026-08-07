@@ -60,6 +60,20 @@ export interface ChatPayload {
   ollamaUrl?: string;
 }
 
+export interface VoiceCommand {
+  action: 'start_ptt' | 'stop_ptt' | 'set_wake_word' | 'speak' | 'stop_speaking';
+  enabled?: boolean;
+  text?: string;
+}
+
+export interface VoiceEvent {
+  event: 'ready' | 'listening' | 'listening_stopped' | 'wake_word' | 'wake_word_status' | 'transcript' | 'speaking' | 'speaking_stopped' | 'error';
+  text?: string;
+  message?: string;
+  mode?: 'ptt' | 'wake';
+  enabled?: boolean;
+}
+
 declare global {
   interface Window {
     nova: {
@@ -73,6 +87,8 @@ declare global {
       testConnection: (provider: Provider, key: string, ollamaUrl?: string) => Promise<{ ok: boolean; error?: string }>;
       getOllamaModels: (url?: string) => Promise<string[]>;
       openExternal: (url: string) => void;
+      voiceCommand: (command: VoiceCommand) => void;
+      onVoiceEvent: (fn: (event: VoiceEvent) => void) => () => void;
     };
   }
 }

@@ -9,6 +9,12 @@ interface ChatPayload {
   ollamaUrl?: string;
 }
 
+interface VoiceCommand {
+  action: 'start_ptt' | 'stop_ptt' | 'set_wake_word' | 'speak' | 'stop_speaking';
+  enabled?: boolean;
+  text?: string;
+}
+
 contextBridge.exposeInMainWorld("nova", {
   // Chat
   sendMessage: (payload: ChatPayload) => { ipcRenderer.send("chat:send", payload); },
@@ -29,4 +35,11 @@ contextBridge.exposeInMainWorld("nova", {
   getOllamaModels: (url?: string): Promise<string[]> => ipcRenderer.invoke("ollama:models", url),
   // Open external URL in system browser
   openExternal: (url: string) => { ipcRenderer.send("open:external", url); },
+  // Local voice runtime
+  voiceCommand: (command: VoiceCommand) => { ipcRenderer.send("voice:command", command); },
+  onVoiceEvent: (fn: (event: Record<string, unknown>) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) => fn(payload);
+    ipcRenderer.on("voice:event", listener);
+    return () => ipcRenderer.removeListener("voice:event", listener);
+  },
 });
