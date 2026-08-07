@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import type { Conversation, Message, Settings } from '../types';
+import type { Conversation, Message, Settings, AssistantMode, TaskItem, NoteItem } from '../types';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -8,6 +8,10 @@ interface AppState {
   activeConversationId: string | null;
   settings: Settings;
   isSettingsOpen: boolean;
+  isProductivityOpen: boolean;
+  isSecurityToolsOpen: boolean;
+  tasks: TaskItem[];
+  notes: NoteItem[];
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -23,12 +27,16 @@ const initialState: AppState = {
   activeConversationId: null,
   settings: DEFAULT_SETTINGS,
   isSettingsOpen: false,
+  isProductivityOpen: false,
+  isSecurityToolsOpen: false,
+  tasks: [],
+  notes: [],
 };
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 type Action =
-  | { type: 'NEW_CHAT'; id?: string; model?: string }
+  | { type: 'NEW_CHAT'; id?: string; model?: string; mode?: AssistantMode }
   | { type: 'SELECT_CHAT'; id: string }
   | { type: 'DELETE_CHAT'; id: string }
   | { type: 'CLEAR_ALL_CHATS' }
@@ -38,9 +46,19 @@ type Action =
   | { type: 'TRUNCATE_TO_MESSAGE'; conversationId: string; messageId: string }
   | { type: 'SET_TITLE'; conversationId: string; title: string }
   | { type: 'SET_MODEL'; conversationId: string; model: string }
+  | { type: 'SET_MODE'; conversationId: string; mode: AssistantMode }
   | { type: 'TOGGLE_PIN'; conversationId: string }
   | { type: 'UPDATE_SETTINGS'; settings: Partial<Settings> }
   | { type: 'SET_SETTINGS_OPEN'; open: boolean }
+  | { type: 'SET_PRODUCTIVITY_OPEN'; open: boolean }
+  | { type: 'SET_SECURITY_TOOLS_OPEN'; open: boolean }
+  | { type: 'ADD_TASK'; task: TaskItem }
+  | { type: 'UPDATE_TASK'; task: TaskItem }
+  | { type: 'DELETE_TASK'; taskId: string }
+  | { type: 'TOGGLE_TASK'; taskId: string }
+  | { type: 'ADD_NOTE'; note: NoteItem }
+  | { type: 'UPDATE_NOTE'; note: NoteItem }
+  | { type: 'DELETE_NOTE'; noteId: string }
   | { type: 'HYDRATE'; state: AppState };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -48,7 +66,13 @@ type Action =
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'HYDRATE':
-      return action.state;
+      return {
+        ...action.state,
+        tasks: action.state.tasks || [],
+        notes: action.state.notes || [],
+        isProductivityOpen: false,
+        isSecurityToolsOpen: false,
+      };
 
     case 'NEW_CHAT': {
       const id = action.id ?? crypto.randomUUID();
@@ -60,6 +84,7 @@ function reducer(state: AppState, action: Action): AppState {
         createdAt: now,
         updatedAt: now,
         model: action.model ?? state.settings.defaultModel,
+        mode: action.mode ?? 'general',
       };
       return {
         ...state,
@@ -149,6 +174,15 @@ function reducer(state: AppState, action: Action): AppState {
       };
     }
 
+    case 'SET_MODE': {
+      return {
+        ...state,
+        conversations: state.conversations.map(c =>
+          c.id === action.conversationId ? { ...c, mode: action.mode } : c
+        ),
+      };
+    }
+
     case 'TOGGLE_PIN': {
       return {
         ...state,
@@ -163,6 +197,56 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_SETTINGS_OPEN':
       return { ...state, isSettingsOpen: action.open };
+
+    case 'SET_PRODUCTIVITY_OPEN':
+      return { ...state, isProductivityOpen: action.open };
+
+    case 'SET_SECURITY_TOOLS_OPEN':
+      return { ...state, isSecurityToolsOpen: action.open };
+
+    case 'ADD_TASK':
+      return { ...state, tasks: [action.task, ...state.tasks] };
+
+    case 'UPDATE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => (t.id === action.task.id ? action.task : t)),
+      };
+
+    case 'DELETE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.filter(t => t.id !== action.taskId),
+      };
+
+    case 'TOGGLE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => {
+          if (t.id !== action.taskId) return t;
+          const nextStatus = t.status === 'completed' ? 'pending' : 'completed';
+          return {
+            ...t,
+            status: nextStatus,
+            completedAt: nextStatus === 'completed' ? Date.now() : undefined,
+          };
+        }),
+      };
+
+    case 'ADD_NOTE':
+      return { ...state, notes: [action.note, ...state.notes] };
+
+    case 'UPDATE_NOTE':
+      return {
+        ...state,
+        notes: state.notes.map(n => (n.id === action.note.id ? action.note : n)),
+      };
+
+    case 'DELETE_NOTE':
+      return {
+        ...state,
+        notes: state.notes.filter(n => n.id !== action.noteId),
+      };
 
     default:
       return state;

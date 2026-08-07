@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { MODELS } from '../types';
+import { MODELS, ASSISTANT_MODES } from '../types';
 import type { Conversation, Message, Provider } from '../types';
 
 export function useChat() {
@@ -277,8 +277,11 @@ export function useChat() {
       content: m.content,
     }));
 
-    const modelId = pendingConversation.model || settings.defaultModel;
-    const systemPrompt = pendingConversation.systemPrompt || settings.systemPrompt;
+    const modeConfig = ASSISTANT_MODES.find(m => m.id === (conversation?.mode ?? 'general'));
+    const systemPrompt =
+      conversation?.systemPrompt ||
+      modeConfig?.systemPrompt ||
+      settings.systemPrompt;
     await fetchStream(targetConversationId, apiMessages, modelId, systemPrompt);
 
     // After first response, generate an AI-powered title in the background
@@ -306,7 +309,8 @@ export function useChat() {
 
     const apiMessages = previousMessages.map(m => ({ role: m.role, content: m.content }));
     const modelId = conv.model || settings.defaultModel;
-    const systemPrompt = conv.systemPrompt || settings.systemPrompt;
+    const modeConfig = ASSISTANT_MODES.find(m => m.id === (conv.mode ?? 'general'));
+    const systemPrompt = conv.systemPrompt || modeConfig?.systemPrompt || settings.systemPrompt;
     await fetchStream(conv.id, apiMessages, modelId, systemPrompt);
   }, [state, dispatch, isStreaming, fetchStream]);
 
@@ -326,7 +330,8 @@ export function useChat() {
     }));
 
     const modelId = conv.model || settings.defaultModel;
-    const systemPrompt = conv.systemPrompt || settings.systemPrompt;
+    const modeConfig = ASSISTANT_MODES.find(m => m.id === (conv.mode ?? 'general'));
+    const systemPrompt = conv.systemPrompt || modeConfig?.systemPrompt || settings.systemPrompt;
     await fetchStream(conv.id, updatedHistory, modelId, systemPrompt);
   }, [state, dispatch, isStreaming, fetchStream]);
 

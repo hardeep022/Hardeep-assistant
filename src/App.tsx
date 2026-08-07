@@ -5,10 +5,12 @@ import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { SettingsModal } from './components/SettingsModal';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
+import { ProductivityModal } from './components/ProductivityModal';
+import { CybersecurityToolsModal } from './components/CybersecurityToolsModal';
 import './App.css';
 
 function AppShell() {
-  const { dispatch } = useApp();
+  const { state, dispatch } = useApp();
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
   // Keyboard shortcuts
@@ -28,6 +30,8 @@ function AppShell() {
       }
       if (e.key === 'Escape') {
         setIsShortcutsOpen(false);
+        dispatch({ type: 'SET_PRODUCTIVITY_OPEN', open: false });
+        dispatch({ type: 'SET_SECURITY_TOOLS_OPEN', open: false });
       }
     };
     window.addEventListener('keydown', handler);
@@ -40,6 +44,14 @@ function AppShell() {
       <ChatView />
       <SettingsModal />
       <KeyboardShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
+      <ProductivityModal
+        isOpen={state.isProductivityOpen}
+        onClose={() => dispatch({ type: 'SET_PRODUCTIVITY_OPEN', open: false })}
+      />
+      <CybersecurityToolsModal
+        isOpen={state.isSecurityToolsOpen}
+        onClose={() => dispatch({ type: 'SET_SECURITY_TOOLS_OPEN', open: false })}
+      />
     </div>
   );
 }

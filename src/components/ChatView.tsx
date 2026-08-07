@@ -4,14 +4,52 @@ import { useChat } from '../hooks/useChat';
 import { useToast } from './Toast';
 import { MessageBubble } from './MessageBubble';
 import { InputBar } from './InputBar';
-import { MODELS } from '../types';
+import { MODELS, ASSISTANT_MODES, type AssistantMode } from '../types';
 
-const SUGGESTIONS = [
-  { icon: '⚡', text: 'Explain quantum computing in simple terms' },
-  { icon: '🐍', text: 'Write a Python function to sort a linked list' },
-  { icon: '✍️', text: 'Help me write a professional email' },
-  { icon: '🔍', text: 'What are the pros and cons of React vs Vue?' },
-];
+const MODE_SUGGESTIONS: Record<AssistantMode, Array<{ icon: string; text: string }>> = {
+  general: [
+    { icon: '⚡', text: 'Explain quantum computing in simple terms' },
+    { icon: '🌍', text: 'What are the most significant scientific breakthroughs this decade?' },
+    { icon: '✍️', text: 'Help me write a professional follow-up email' },
+    { icon: '🔍', text: 'Compare SQLite vs PostgreSQL for desktop apps' },
+  ],
+  coding: [
+    { icon: '🐍', text: 'Write a Python script to monitor system CPU and memory usage' },
+    { icon: '⚛️', text: 'How do React 19 server components work vs client components?' },
+    { icon: '🛠️', text: 'Debug this TypeScript generic type constraint error' },
+    { icon: '🚀', text: 'Refactor this async function for optimal concurrency' },
+  ],
+  learning: [
+    { icon: '🧠', text: 'Explain how neural networks learn with backpropagation' },
+    { icon: '📚', text: 'Create a 5-step study guide for learning Rust from scratch' },
+    { icon: '💡', text: 'Give me a quiz on computer networking fundamentals' },
+    { icon: '🎯', text: 'Use the Feynman technique to teach me blockchain consensus' },
+  ],
+  research: [
+    { icon: '🔬', text: 'Synthesize the pros and cons of local LLMs vs Cloud APIs' },
+    { icon: '📊', text: 'Generate a comparison matrix of AES-256 vs ChaCha20-Poly1305' },
+    { icon: '📑', text: 'Summarize key principles of Zero Trust Architecture' },
+    { icon: '📈', text: 'Analyze trends in edge computing and WebAssembly' },
+  ],
+  productivity: [
+    { icon: '✅', text: 'Help me prioritize my weekly task backlog using Eisenhower Matrix' },
+    { icon: '⏱️', text: 'Draft a Pomodoro sprint schedule for deep work sessions' },
+    { icon: '📋', text: 'Turn these meeting notes into an actionable checklist with deadlines' },
+    { icon: '🎯', text: 'Design a daily morning routine for maximum focus and flow' },
+  ],
+  cybersecurity: [
+    { icon: '🛡️', text: 'How do I protect my application against Cross-Site Scripting (XSS)?' },
+    { icon: '🔐', text: 'Explain how public key cryptography and Diffie-Hellman work' },
+    { icon: '🎣', text: 'Analyze this sample email for spear-phishing indicators' },
+    { icon: '🔍', text: 'What is the difference between SHA-256 and HMAC-SHA256?' },
+  ],
+  writing: [
+    { icon: '✉️', text: 'Write a polite but firm email requesting an invoice payment' },
+    { icon: '📝', text: 'Proofread and elevate the tone of this project introduction' },
+    { icon: '📢', text: 'Draft a product launch announcement for developer tools' },
+    { icon: '🎨', text: 'Rewrite this technical explanation in clear, engaging prose' },
+  ],
+};
 
 export function ChatView() {
   const { activeConversation, state, dispatch } = useApp();
@@ -24,6 +62,9 @@ export function ChatView() {
   const [headerTitle, setHeaderTitle] = useState('');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+
+  const currentMode: AssistantMode = activeConversation?.mode ?? 'general';
+  const currentModeConfig = ASSISTANT_MODES.find(m => m.id === currentMode) ?? ASSISTANT_MODES[0];
 
   const messages = activeConversation?.messages ?? [];
   const modelId = activeConversation?.model || state.settings.defaultModel;
@@ -66,6 +107,15 @@ export function ChatView() {
     setShowModelDropdown(false);
   };
 
+  const handleSelectMode = (mode: AssistantMode) => {
+    if (activeConversation) {
+      dispatch({ type: 'SET_MODE', conversationId: activeConversation.id, mode });
+    } else {
+      const id = crypto.randomUUID();
+      dispatch({ type: 'NEW_CHAT', id, mode });
+    }
+  };
+
   // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,7 +123,7 @@ export function ChatView() {
 
   const createConversationAndSend = (content: string) => {
     const conversationId = crypto.randomUUID();
-    dispatch({ type: 'NEW_CHAT', id: conversationId });
+    dispatch({ type: 'NEW_CHAT', id: conversationId, mode: currentMode });
     sendMessage(content, conversationId);
   };
 
@@ -117,6 +167,7 @@ export function ChatView() {
   };
 
   const hasMessages = messages.length > 0;
+  const suggestions = MODE_SUGGESTIONS[currentMode] || MODE_SUGGESTIONS.general;
 
   return (
     <main className="chat-view">
@@ -179,27 +230,23 @@ export function ChatView() {
 
               {showModelDropdown && (
                 <div
-                  className="header-model-dropdown"
                   style={{
                     position: 'absolute',
-                    top: '100%',
+                    top: 'calc(100% + 4px)',
                     left: 0,
-                    marginTop: '6px',
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-md)',
-                    borderRadius: 'var(--r-md)',
-                    boxShadow: 'var(--shadow-lg)',
-                    padding: '6px',
                     zIndex: 100,
-                    width: '240px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-sm)',
+                    boxShadow: 'var(--shadow-md)',
+                    minWidth: '220px',
+                    padding: '4px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '4px',
-                    maxHeight: '300px',
-                    overflowY: 'auto',
+                    gap: '2px',
                   }}
                 >
-                  <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', padding: '4px 8px' }}>
+                  <div style={{ padding: '4px 8px', fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                     Select Model
                   </div>
                   {MODELS.map(m => (
@@ -211,12 +258,12 @@ export function ChatView() {
                         flexDirection: 'column',
                         alignItems: 'flex-start',
                         padding: '6px 8px',
-                        background: m.id === model.id ? 'var(--accent-dim)' : 'transparent',
-                        border: 'none',
                         borderRadius: 'var(--r-xs)',
+                        border: 'none',
+                        background: m.id === model.id ? 'var(--accent-dim)' : 'transparent',
+                        color: m.id === model.id ? 'var(--accent-light)' : 'var(--text-primary)',
                         cursor: 'pointer',
                         textAlign: 'left',
-                        color: m.id === model.id ? 'var(--accent-light)' : 'var(--text-primary)',
                       }}
                     >
                       <div style={{ fontSize: '12px', fontWeight: 500 }}>{m.name}</div>
@@ -264,18 +311,50 @@ export function ChatView() {
         </div>
       )}
 
+      {/* Assistant Mode Tab Bar */}
+      <div className="mode-tab-bar" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', overflowX: 'auto' }}>
+        {ASSISTANT_MODES.map(m => {
+          const isSelected = currentMode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => handleSelectMode(m.id)}
+              title={m.description}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 10px',
+                borderRadius: 'var(--r-full)',
+                border: isSelected ? '1px solid var(--accent)' : '1px solid transparent',
+                background: isSelected ? 'var(--accent-dim)' : 'transparent',
+                color: isSelected ? 'var(--accent-light)' : 'var(--text-secondary)',
+                fontSize: '12px',
+                fontWeight: isSelected ? 600 : 500,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>{m.icon}</span>
+              <span>{m.name}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Messages / Empty State */}
       {!activeConversation || !hasMessages ? (
         <div className="empty-state">
-          <div className="empty-logo">✦</div>
+          <div className="empty-logo">{currentModeConfig.icon}</div>
           <div>
-            <p className="empty-heading">How can I help you today?</p>
+            <p className="empty-heading">{currentModeConfig.name} Assistant</p>
             <p className="empty-sub">
-              Ask me anything — code, writing, analysis, and more.
+              {currentModeConfig.description}
             </p>
           </div>
           <div className="suggestions-grid">
-            {SUGGESTIONS.map(s => (
+            {suggestions.map(s => (
               <button
                 key={s.text}
                 className="suggestion-card"

@@ -129,6 +129,52 @@ export function Sidebar() {
             </button>
           )}
         </div>
+
+        {/* Quick Tools Nav */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', paddingTop: '8px' }}>
+          <button
+            onClick={() => dispatch({ type: 'SET_PRODUCTIVITY_OPEN', open: true })}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              padding: '6px 8px',
+              borderRadius: 'var(--r-xs)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-secondary)',
+              fontSize: '11px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+            title="Tasks & Notes"
+          >
+            <span>⚡</span>
+            <span>Tasks</span>
+          </button>
+          <button
+            onClick={() => dispatch({ type: 'SET_SECURITY_TOOLS_OPEN', open: true })}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              padding: '6px 8px',
+              borderRadius: 'var(--r-xs)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-secondary)',
+              fontSize: '11px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+            title="Cybersecurity Toolkit"
+          >
+            <span>🛡️</span>
+            <span>Security</span>
+          </button>
+        </div>
       </div>
 
       {/* Conversation List */}
