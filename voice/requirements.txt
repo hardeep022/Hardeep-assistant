@@ -1,0 +1,4 @@
+faster-whisper>=1.2.1
+kokoro>=0.9.4
+numpy>=2.0.0
+sounddevice>=0.5.1
