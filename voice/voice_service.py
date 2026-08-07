@@ -15,10 +15,31 @@ import time
 from collections import deque
 from typing import Any
 
-import numpy as np
-import sounddevice as sd
-from faster_whisper import WhisperModel
-from kokoro import KPipeline
+# Check dependencies with clear JSON event reporting
+missing_deps = []
+try:
+    import numpy as np
+except ImportError:
+    missing_deps.append("numpy")
+    np = None
+
+try:
+    import sounddevice as sd
+except ImportError:
+    missing_deps.append("sounddevice")
+    sd = None
+
+try:
+    from faster_whisper import WhisperModel
+except ImportError:
+    missing_deps.append("faster-whisper")
+    WhisperModel = None
+
+try:
+    from kokoro import KPipeline
+except ImportError:
+    missing_deps.append("kokoro")
+    KPipeline = None
 
 SAMPLE_RATE = 16_000
 WAKE_WORD = "nova"
@@ -32,23 +53,29 @@ class VoiceService:
         self.wake_enabled = False
         self.ptt_active = False
         self.auto_capture = False
-        self.recording: list[np.ndarray] = []
-        self.wake_buffer: deque[np.ndarray] = deque(maxlen=160)
+        self.recording: list[Any] = []
+        self.wake_buffer: deque[Any] = deque(maxlen=160)
         self.last_voice_at = 0.0
         self.last_wake_check = 0.0
         self.transcribing = False
         self.speaking = False
         self.speech_stop = threading.Event()
         self.lock = threading.Lock()
-        self.whisper = WhisperModel("base", device="cpu", compute_type="int8")
-        self.kokoro = KPipeline(lang_code="a")
-        self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            blocksize=1_600,
-            callback=self._on_audio,
-        )
+
+        if missing_deps:
+            self.whisper = None
+            self.kokoro = None
+            self.stream = None
+        else:
+            self.whisper = WhisperModel("base", device="cpu", compute_type="int8")
+            self.kokoro = KPipeline(lang_code="a")
+            self.stream = sd.InputStream(
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                blocksize=1_600,
+                callback=self._on_audio,
+            )
 
     def emit(self, event: str, **payload: Any) -> None:
         print(json.dumps({"event": event, **payload}), flush=True)
@@ -179,7 +206,20 @@ class VoiceService:
             self.emit("error", message="Invalid voice command")
 
     def run(self) -> None:
-        self.stream.start()
+        if missing_deps:
+            self.emit(
+                "error",
+                message=f"Voice runtime missing dependencies ({', '.join(missing_deps)}). Install via: pip install -r voice/requirements.txt",
+            )
+            while True:
+                command = self.commands.get()
+                if command.get("action") == "shutdown":
+                    break
+                self.emit("error", message=f"Voice runtime disabled: missing {', '.join(missing_deps)}")
+            return
+
+        if self.stream is not None:
+            self.stream.start()
         self.emit("ready")
         try:
             while True:
@@ -195,7 +235,8 @@ class VoiceService:
                         self.stop_ptt()
         finally:
             self.stop_speaking()
-            self.stream.close()
+            if self.stream is not None:
+                self.stream.close()
 
 
 def read_commands(service: VoiceService) -> None:
