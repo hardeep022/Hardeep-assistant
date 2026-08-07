@@ -20,10 +20,28 @@ export function ChatView() {
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [headerTitle, setHeaderTitle] = useState('');
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
 
   const messages = activeConversation?.messages ?? [];
   const modelId = activeConversation?.model || state.settings.defaultModel;
-  const model = MODELS.find(m => m.id === modelId);
+  const model = MODELS.find(m => m.id === modelId) ?? {
+    id: modelId,
+    name: modelId,
+    provider: 'ollama' as const,
+    description: 'Local Model',
+  };
+
+  // Close model menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleStartEditTitle = () => {
     if (activeConversation) {
@@ -37,6 +55,13 @@ export function ChatView() {
       dispatch({ type: 'SET_TITLE', conversationId: activeConversation.id, title: headerTitle.trim() });
     }
     setIsEditingTitle(false);
+  };
+
+  const handleSelectModel = (selectedModelId: string) => {
+    if (activeConversation) {
+      dispatch({ type: 'SET_MODEL', conversationId: activeConversation.id, model: selectedModelId });
+    }
+    setShowModelDropdown(false);
   };
 
   // Auto-scroll to bottom
@@ -123,11 +148,80 @@ export function ChatView() {
                 {activeConversation.title} ✏️
               </span>
             )}
-            {model && (
-              <span className="chat-model-badge">
-                {model.name}
-              </span>
-            )}
+            
+            {/* Interactive Model Selector in Header */}
+            <div style={{ position: 'relative' }} ref={modelMenuRef}>
+              <button
+                className="chat-model-badge interactive"
+                onClick={() => setShowModelDropdown(prev => !prev)}
+                title="Switch model for this conversation"
+                style={{
+                  background: 'var(--accent-dim)',
+                  border: '1px solid var(--border-active)',
+                  color: 'var(--accent-light)',
+                  padding: '3px 8px',
+                  borderRadius: 'var(--r-full)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>{model.name}</span>
+                <span style={{ fontSize: '9px', opacity: 0.7 }}>▼</span>
+              </button>
+
+              {showModelDropdown && (
+                <div
+                  className="header-model-dropdown"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    marginTop: '6px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-md)',
+                    borderRadius: 'var(--r-md)',
+                    boxShadow: 'var(--shadow-lg)',
+                    padding: '6px',
+                    zIndex: 100,
+                    width: '240px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', padding: '4px 8px' }}>
+                    Select Model
+                  </div>
+                  {MODELS.map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => handleSelectModel(m.id)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        padding: '6px 8px',
+                        background: m.id === model.id ? 'var(--accent-dim)' : 'transparent',
+                        border: 'none',
+                        borderRadius: 'var(--r-xs)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        color: m.id === model.id ? 'var(--accent-light)' : 'var(--text-primary)',
+                      }}
+                    >
+                      <div style={{ fontSize: '12px', fontWeight: 500 }}>{m.name}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{m.description}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Export Actions */}
