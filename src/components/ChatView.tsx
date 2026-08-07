@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../hooks/useChat';
 import { MessageBubble } from './MessageBubble';

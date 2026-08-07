@@ -226,8 +226,8 @@ export function useChat() {
   }, [state, dispatch, isStreaming, fetchStream]);
 
   const regenerate = useCallback(async (assistantMessageId: string) => {
-    const { activeConversation, conversations, settings } = state;
-    const conv = activeConversation ?? conversations.find(c => c.messages.some(m => m.id === assistantMessageId));
+    const { conversations, settings } = state;
+    const conv = conversations.find(c => c.messages.some(m => m.id === assistantMessageId));
     if (!conv || isStreaming) return;
 
     const msgIdx = conv.messages.findIndex(m => m.id === assistantMessageId);
@@ -247,8 +247,8 @@ export function useChat() {
   }, [state, dispatch, isStreaming, fetchStream]);
 
   const editAndResend = useCallback(async (userMessageId: string, newContent: string) => {
-    const { activeConversation, conversations, settings } = state;
-    const conv = activeConversation ?? conversations.find(c => c.messages.some(m => m.id === userMessageId));
+    const { conversations, settings } = state;
+    const conv = conversations.find(c => c.messages.some(m => m.id === userMessageId));
     if (!conv || isStreaming) return;
 
     dispatch({ type: 'EDIT_MESSAGE', conversationId: conv.id, messageId: userMessageId, newContent });
