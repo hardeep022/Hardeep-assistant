@@ -1280,3 +1280,64 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-dim);
 }
+
+/* ── Keyboard Shortcuts Modal ─────────────────────── */
+
+.shortcuts-category-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shortcuts-category-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+
+.shortcut-description {
+  color: var(--text-secondary);
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcut-key {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-md);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.shortcut-key-plus {
+  font-size: 11px;
+  color: var(--text-muted);
+}
