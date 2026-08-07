@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { MODELS } from '../types';
-import type { Conversation, Message } from '../types';
+import type { Conversation, Message, Provider } from '../types';
 
 export function useChat() {
   const { state, dispatch } = useApp();
@@ -190,6 +190,60 @@ export function useChat() {
     }
   }, [state, dispatch]);
 
+  // Generate a concise title for a conversation using a lightweight AI call
+  const autoTitleConversation = useCallback(async (
+    conversationId: string,
+    userMessage: string,
+    modelId: string,
+    provider: Provider,
+  ) => {
+    try {
+      const { settings } = state;
+      const ollamaUrl = settings.ollamaUrl || 'http://localhost:11434';
+      const titlePrompt = [
+        { role: 'user' as const, content: `Generate a very short title (3-6 words, no quotes, no punctuation) that summarizes this message:\n\n"${userMessage.slice(0, 300)}"` },
+      ];
+
+      if (window.nova) {
+        // Use a one-shot IPC call: send title request using existing streaming but
+        // just listen for the done event. To avoid collision with main stream, use
+        // a direct fetch for Ollama provider, or Gemini free tier if available.
+        if (provider === 'ollama') {
+          const res = await fetch(`${ollamaUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelId, messages: titlePrompt, stream: false }),
+          });
+          if (res.ok) {
+            const data = await res.json() as { message?: { content?: string } };
+            const title = data.message?.content?.trim().replace(/^["']|["']$/g, '');
+            if (title && title.length > 0 && title.length < 80) {
+              dispatch({ type: 'SET_TITLE', conversationId, title });
+            }
+          }
+        }
+        // For cloud providers we skip auto-title to avoid extra API costs
+        // and keep the truncated user message as title instead
+      } else if (provider === 'ollama') {
+        // Browser-only mode (dev)
+        const res = await fetch(`${ollamaUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelId, messages: titlePrompt, stream: false }),
+        });
+        if (res.ok) {
+          const data = await res.json() as { message?: { content?: string } };
+          const title = data.message?.content?.trim().replace(/^["']|["']$/g, '');
+          if (title && title.length > 0 && title.length < 80) {
+            dispatch({ type: 'SET_TITLE', conversationId, title });
+          }
+        }
+      }
+    } catch {
+      // Auto-title is best-effort; silently ignore failures.
+    }
+  }, [state, dispatch]);
+
   const sendMessage = useCallback(async (content: string, conversationId?: string) => {
     const { activeConversationId, conversations, settings } = state;
     const targetConversationId = conversationId ?? activeConversationId;
@@ -202,6 +256,8 @@ export function useChat() {
       model: settings.defaultModel,
     };
 
+    const isFirstMessage = pendingConversation.messages.length === 0;
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -210,7 +266,8 @@ export function useChat() {
     };
     dispatch({ type: 'ADD_MESSAGE', conversationId: targetConversationId, message: userMessage });
 
-    if (pendingConversation.messages.length === 0) {
+    // Set a temporary title from the user message immediately
+    if (isFirstMessage) {
       const title = content.length > 48 ? content.slice(0, 48) + '…' : content;
       dispatch({ type: 'SET_TITLE', conversationId: targetConversationId, title });
     }
@@ -223,7 +280,14 @@ export function useChat() {
     const modelId = pendingConversation.model || settings.defaultModel;
     const systemPrompt = pendingConversation.systemPrompt || settings.systemPrompt;
     await fetchStream(targetConversationId, apiMessages, modelId, systemPrompt);
-  }, [state, dispatch, isStreaming, fetchStream]);
+
+    // After first response, generate an AI-powered title in the background
+    if (isFirstMessage) {
+      const staticModel = MODELS.find(m => m.id === modelId);
+      const provider: Provider = staticModel?.provider ?? 'ollama';
+      void autoTitleConversation(targetConversationId, content, modelId, provider);
+    }
+  }, [state, dispatch, isStreaming, fetchStream, autoTitleConversation]);
 
   const regenerate = useCallback(async (assistantMessageId: string) => {
     const { conversations, settings } = state;
