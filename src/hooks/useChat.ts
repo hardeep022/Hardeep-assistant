@@ -12,7 +12,8 @@ export function useChat() {
   const fetchStream = useCallback(async (
     targetConversationId: string,
     apiMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    modelId: string
+    modelId: string,
+    systemPrompt?: string
   ) => {
     const { settings } = state;
     const staticModel = MODELS.find(m => m.id === modelId);
@@ -94,14 +95,18 @@ export function useChat() {
         model: modelInfo.id,
         provider: modelInfo.provider,
         ollamaUrl: settings.ollamaUrl || 'http://localhost:11434',
+        systemPrompt,
       });
     } else if (modelInfo.provider === 'ollama') {
       try {
         const ollamaUrl = settings.ollamaUrl || 'http://localhost:11434';
+        const formattedMessages = systemPrompt
+          ? [{ role: 'system', content: systemPrompt }, ...apiMessages]
+          : apiMessages;
         const res = await fetch(`${ollamaUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: modelInfo.id, messages: apiMessages, stream: true }),
+          body: JSON.stringify({ model: modelInfo.id, messages: formattedMessages, stream: true }),
         });
 
         if (!res.ok) {
@@ -216,7 +221,8 @@ export function useChat() {
     }));
 
     const modelId = pendingConversation.model || settings.defaultModel;
-    await fetchStream(targetConversationId, apiMessages, modelId);
+    const systemPrompt = pendingConversation.systemPrompt || settings.systemPrompt;
+    await fetchStream(targetConversationId, apiMessages, modelId, systemPrompt);
   }, [state, dispatch, isStreaming, fetchStream]);
 
   const regenerate = useCallback(async (assistantMessageId: string) => {
@@ -236,7 +242,8 @@ export function useChat() {
 
     const apiMessages = previousMessages.map(m => ({ role: m.role, content: m.content }));
     const modelId = conv.model || settings.defaultModel;
-    await fetchStream(conv.id, apiMessages, modelId);
+    const systemPrompt = conv.systemPrompt || settings.systemPrompt;
+    await fetchStream(conv.id, apiMessages, modelId, systemPrompt);
   }, [state, dispatch, isStreaming, fetchStream]);
 
   const editAndResend = useCallback(async (userMessageId: string, newContent: string) => {
@@ -255,7 +262,8 @@ export function useChat() {
     }));
 
     const modelId = conv.model || settings.defaultModel;
-    await fetchStream(conv.id, updatedHistory, modelId);
+    const systemPrompt = conv.systemPrompt || settings.systemPrompt;
+    await fetchStream(conv.id, updatedHistory, modelId, systemPrompt);
   }, [state, dispatch, isStreaming, fetchStream]);
 
   const deleteMessage = useCallback((messageId: string) => {

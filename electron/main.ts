@@ -357,11 +357,14 @@ ipcMain.handle("settings:test", async (_event, provider: unknown, key: unknown, 
   }
 });
 
-async function streamOpenAI(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, apiKey: string, baseUrl = "https://api.openai.com") {
+async function streamOpenAI(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, apiKey: string, baseUrl = "https://api.openai.com", systemPrompt?: string) {
+  const formattedMessages = systemPrompt
+    ? [{ role: "system", content: systemPrompt }, ...messages]
+    : messages;
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({ model, messages: formattedMessages, stream: true }),
   });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => ({}));
@@ -393,14 +396,18 @@ async function streamOpenAI(event: Electron.IpcMainEvent, messages: ChatMessage[
   event.sender.send("chat:done", fullText);
 }
 
-async function streamGemini(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, apiKey: string) {
+async function streamGemini(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, apiKey: string, systemPrompt?: string) {
   const contents = messages.map(m => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
+  const bodyPayload: Record<string, unknown> = { contents };
+  if (systemPrompt) {
+    bodyPayload.systemInstruction = { parts: [{ text: systemPrompt }] };
+  }
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents }) }
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyPayload) }
   );
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => ({}));
@@ -430,11 +437,20 @@ async function streamGemini(event: Electron.IpcMainEvent, messages: ChatMessage[
   event.sender.send("chat:done", fullText);
 }
 
-async function streamAnthropic(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, apiKey: string) {
+async function streamAnthropic(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, apiKey: string, systemPrompt?: string) {
+  const bodyPayload: Record<string, unknown> = {
+    model,
+    messages,
+    stream: true,
+    max_tokens: 4096,
+  };
+  if (systemPrompt) {
+    bodyPayload.system = systemPrompt;
+  }
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: true, max_tokens: 4096 }),
+    body: JSON.stringify(bodyPayload),
   });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => ({}));
@@ -466,11 +482,14 @@ async function streamAnthropic(event: Electron.IpcMainEvent, messages: ChatMessa
   event.sender.send("chat:done", fullText);
 }
 
-async function streamOllama(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, baseUrl = "http://localhost:11434") {
+async function streamOllama(event: Electron.IpcMainEvent, messages: ChatMessage[], model: string, baseUrl = "http://localhost:11434", systemPrompt?: string) {
+  const formattedMessages = systemPrompt
+    ? [{ role: "system", content: systemPrompt }, ...messages]
+    : messages;
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({ model, messages: formattedMessages, stream: true }),
   });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => ({}));
@@ -509,17 +528,18 @@ ipcMain.on("chat:send", async (event, payload: unknown) => {
     return;
   }
   const { messages, model, provider } = payload;
+  const systemPrompt = typeof payload.systemPrompt === "string" ? payload.systemPrompt : undefined;
   const ollamaUrl = typeof payload.ollamaUrl === "string" ? payload.ollamaUrl : "http://localhost:11434";
   const settings = loadSettings();
   try {
     if (provider === "ollama") {
-      await streamOllama(event, messages, model, ollamaUrl);
+      await streamOllama(event, messages, model, ollamaUrl, systemPrompt);
     } else if (provider === "openai") {
-      await streamOpenAI(event, messages, model, settings.openaiKey);
+      await streamOpenAI(event, messages, model, settings.openaiKey, undefined, systemPrompt);
     } else if (provider === "gemini") {
-      await streamGemini(event, messages, model, settings.geminiKey);
+      await streamGemini(event, messages, model, settings.geminiKey, systemPrompt);
     } else if (provider === "anthropic") {
-      await streamAnthropic(event, messages, model, settings.anthropicKey);
+      await streamAnthropic(event, messages, model, settings.anthropicKey, systemPrompt);
     } else {
       throw new Error(`Unknown provider: ${provider}`);
     }

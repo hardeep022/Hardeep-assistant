@@ -43,6 +43,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   model: string;
+  systemPrompt?: string;
 }
 
 export interface Settings {
@@ -51,6 +52,7 @@ export interface Settings {
   anthropicKey: string;
   ollamaUrl: string;
   defaultModel: string;
+  systemPrompt?: string;
 }
 
 export interface ChatPayload {
@@ -58,6 +60,7 @@ export interface ChatPayload {
   model: string;
   provider: Provider;
   ollamaUrl?: string;
+  systemPrompt?: string;
 }
 
 export interface VoiceCommand {

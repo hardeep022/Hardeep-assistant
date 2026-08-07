@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { MODELS } from '../types';
 import type { Settings, Provider } from '../types';
@@ -273,6 +273,20 @@ export function SettingsModal() {
                   </optgroup>
                 </select>
               </div>
+
+              <div className="settings-field">
+                <label className="settings-label">Global System Instructions</label>
+                <p className="settings-sublabel">Custom persona or instructions given to all AI models</p>
+                <textarea
+                  className="settings-input"
+                  rows={4}
+                  value={local.systemPrompt || ''}
+                  onChange={e => setLocal(p => ({ ...p, systemPrompt: e.target.value }))}
+                  placeholder="e.g. You are an expert software developer. Provide clear explanations and clean, production-ready code with TypeScript types."
+                  style={{ resize: 'vertical', fontFamily: 'inherit', height: 'auto', paddingTop: '8px' }}
+                />
+              </div>
+
               <div className="settings-info-box">
                 API keys are stored encrypted using your system keychain. Never sent anywhere except to the AI provider directly.
               </div>
