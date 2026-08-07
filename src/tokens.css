@@ -1,0 +1,75 @@
+:root {
+    /* ── Base Colors ───────────────────────────────── */
+    --bg-base: #08090e;
+    --bg-primary: #0F172A;
+    --bg-sidebar: #0c0d14;
+    --bg-card: #13141c;
+    --bg-card-hover: #1a1b26;
+    --bg-hover: rgba(255, 255, 255, 0.05);
+    --bg-active: rgba(124, 58, 237, 0.1);
+    --bg-input: #111219;
+    --bg-user-msg: linear-gradient(135deg, #7c3aed, #5b21b6);
+
+    /* ── Surfaces ──────────────────────────────────── */
+    --surface: #1E293B;
+    --surface-elevated: #334155;
+
+    /* ── Accent / Brand ────────────────────────────── */
+    --primary: #3B82F6;
+    --accent: #7c3aed;
+    --accent-light: #a78bfa;
+    --accent-dim: rgba(124, 58, 237, 0.12);
+    --accent-glow: rgba(124, 58, 237, 0.4);
+    --secondary: #64748B;
+
+    /* ── Text ──────────────────────────────────────── */
+    --text-primary: #e2e8f0;
+    --text-secondary: #94A3B8;
+    --text-muted: #4b5563;
+
+    /* ── Borders ───────────────────────────────────── */
+    --border: rgba(255, 255, 255, 0.06);
+    --border-md: rgba(255, 255, 255, 0.1);
+    --border-active: rgba(124, 58, 237, 0.3);
+    --border-focus: #7c3aed;
+
+    /* ── Status ─────────────────────────────────────── */
+    --success: #10b981;
+    --warning: #F59E0B;
+    --error: #f87171;
+
+    /* ── Typography ─────────────────────────────────── */
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-main: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+    /* ── Radii ──────────────────────────────────────── */
+    --r-xs: 4px;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --r-xl: 20px;
+    --r-full: 9999px;
+
+    /* ── Transitions ────────────────────────────────── */
+    --t-fast: all 0.12s ease;
+    --t-mid: all 0.2s ease;
+
+    /* ── Shadows ─────────────────────────────────────── */
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-glow: 0 0 20px rgba(124, 58, 237, 0.3);
+
+    /* ── Layout ──────────────────────────────────────── */
+    --sidebar-w: 260px;
+    --chat-max: 760px;
+    --input-max: 760px;
+}
+
+body {
+    margin: 0;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    user-select: none;
+}
