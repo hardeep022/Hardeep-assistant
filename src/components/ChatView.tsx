@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../hooks/useChat';
+import { useToast } from './Toast';
 import { MessageBubble } from './MessageBubble';
 import { InputBar } from './InputBar';
 import { MODELS } from '../types';
@@ -15,6 +16,7 @@ const SUGGESTIONS = [
 export function ChatView() {
   const { activeConversation, state, dispatch } = useApp();
   const { sendMessage, regenerate, editAndResend, deleteMessage, isStreaming, streamingContent, stopStreaming } = useChat();
+  const toast = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +100,7 @@ export function ChatView() {
     a.download = `${activeConversation.title.replace(/[^a-z0-9_-]/gi, '_')}.md`;
     a.click();
     URL.revokeObjectURL(url);
+    toast.success('Exported conversation as Markdown (.md)');
   };
 
   const exportAsJSON = () => {
@@ -110,6 +113,7 @@ export function ChatView() {
     a.download = `${activeConversation.title.replace(/[^a-z0-9_-]/gi, '_')}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    toast.success('Exported conversation as JSON (.json)');
   };
 
   const hasMessages = messages.length > 0;
