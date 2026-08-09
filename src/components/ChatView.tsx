@@ -1,10 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, lazy, Suspense } from 'react';
 import { useApp } from '../context/AppContext';
 import { useChat } from '../hooks/useChat';
 import { useToast } from './Toast';
+import { useTranslation } from '../i18n/I18nContext';
 import { MessageBubble } from './MessageBubble';
 import { InputBar } from './InputBar';
+import { parseSystemAction } from '../services/systemActions';
 import { MODELS, ASSISTANT_MODES, type AssistantMode } from '../types';
+import { executeDeepResearch, type DeepResearchReport } from '../services/deepResearchEngine';
+
+const PrivacyCenterModal = lazy(() => import('./PrivacyCenterModal').then(m => ({ default: m.PrivacyCenterModal })));
+const ResearchReportModal = lazy(() => import('./ResearchReportModal').then(m => ({ default: m.ResearchReportModal })));
+const DataAnalysisModal = lazy(() => import('./DataAnalysisModal').then(m => ({ default: m.DataAnalysisModal })));
+const CustomAssistantBuilderModal = lazy(() => import('./CustomAssistantBuilderModal').then(m => ({ default: m.CustomAssistantBuilderModal })));
+const ImageGenModal = lazy(() => import('./ImageGenModal').then(m => ({ default: m.ImageGenModal })));
+const InteractiveCanvasModal = lazy(() => import('./InteractiveCanvasModal').then(m => ({ default: m.InteractiveCanvasModal })));
+const GlobalSearchModal = lazy(() => import('./GlobalSearchModal').then(m => ({ default: m.GlobalSearchModal })));
+const AudioAnalysisModal = lazy(() => import('./AudioAnalysisModal').then(m => ({ default: m.AudioAnalysisModal })));
+const AudioDeviceModal = lazy(() => import('./AudioDeviceModal').then(m => ({ default: m.AudioDeviceModal })));
+
+
 
 const MODE_SUGGESTIONS: Record<AssistantMode, Array<{ icon: string; text: string }>> = {
   general: [
@@ -51,12 +66,34 @@ const MODE_SUGGESTIONS: Record<AssistantMode, Array<{ icon: string; text: string
   ],
 };
 
-export function ChatView() {
+interface ChatViewProps {
+  onAgentPrompt?: (prompt: string) => void;
+}
+
+export function ChatView({ onAgentPrompt }: ChatViewProps = {}) {
+
   const { activeConversation, state, dispatch } = useApp();
   const { sendMessage, regenerate, editAndResend, deleteMessage, isStreaming, streamingContent, stopStreaming } = useChat();
   const toast = useToast();
+  const { t } = useTranslation();
+
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  const [isResearchOpen, setIsResearchOpen] = useState(false);
+  const [researchReport, setResearchReport] = useState<DeepResearchReport | null>(null);
+  const [isDataOpen, setIsDataOpen] = useState(false);
+  const [dataResult, setDataResult] = useState<any>(null);
+  const [isAssistantBuilderOpen, setIsAssistantBuilderOpen] = useState(false);
+  const [isImageGenOpen, setIsImageGenOpen] = useState(false);
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [isAudioAnalysisOpen, setIsAudioAnalysisOpen] = useState(false);
+  const [isAudioDeviceOpen, setIsAudioDeviceOpen] = useState(false);
+
+
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
+
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [headerTitle, setHeaderTitle] = useState('');
@@ -74,6 +111,12 @@ export function ChatView() {
     provider: 'ollama' as const,
     description: 'Local Model',
   };
+
+  // Estimated token count
+  const totalEstimatedTokens = useMemo(() => {
+    const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0);
+    return Math.round(totalChars / 4);
+  }, [messages]);
 
   // Close model menu on outside click
   useEffect(() => {
@@ -121,18 +164,71 @@ export function ChatView() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, streamingContent]);
 
-  const createConversationAndSend = (content: string) => {
-    const conversationId = crypto.randomUUID();
-    dispatch({ type: 'NEW_CHAT', id: conversationId, mode: currentMode });
-    sendMessage(content, conversationId);
-  };
+  const handleSendMessageWithActionCheck = async (content: string, conversationId?: string) => {
+    const action = parseSystemAction(content);
+    if (action) {
+      if (action.riskLevel === 'blocked') {
+        toast.error(`⚠️ Blocked dangerous action: ${action.description}`);
+        dispatch({
+          type: 'ADD_ACTION_LOG',
+          log: {
+            id: crypto.randomUUID(),
+            actionType: action.actionType,
+            riskLevel: 'blocked',
+            status: 'blocked',
+            target: action.target,
+            details: 'Blocked by safety sandbox policies',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      if (action.riskLevel === 'warning') {
+        dispatch({ type: 'SET_PENDING_ACTION', action });
+        return;
+      }
+
+      // Safe action: execute directly
+      if (window.nova?.executeAction) {
+        toast.info(`Executing: ${action.description}…`);
+        const res = await window.nova.executeAction({ type: action.actionType as any, target: action.target });
+        dispatch({
+          type: 'ADD_ACTION_LOG',
+          log: {
+            id: crypto.randomUUID(),
+            actionType: action.actionType,
+            riskLevel: 'safe',
+            status: (res.success || res.ok) ? 'executed' : 'failed',
+            target: action.target,
+            details: res.output || res.error || res.reason,
+            timestamp: Date.now(),
+          },
+        });
+        if (res.success || res.ok) {
+          toast.success(res.output || `Opened ${action.target}`);
+        } else {
+          toast.error(res.error || `Failed to execute action`);
+        }
+      }
+    }
+
+      if (onAgentPrompt && (currentMode === 'coding' || content.length > 15)) {
+        onAgentPrompt(content);
+      }
+
+      if (!activeConversation && !conversationId) {
+        const newId = crypto.randomUUID();
+        dispatch({ type: 'NEW_CHAT', id: newId, mode: currentMode });
+        sendMessage(content, newId);
+      } else {
+        sendMessage(content, conversationId);
+      }
+    };
+
 
   const handleSuggestion = (text: string) => {
-    if (!activeConversation) {
-      createConversationAndSend(text);
-    } else {
-      sendMessage(text);
-    }
+    handleSendMessageWithActionCheck(text);
   };
 
   const exportAsMarkdown = () => {
@@ -164,6 +260,25 @@ export function ChatView() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Exported conversation as JSON (.json)');
+  };
+
+  const exportAsText = () => {
+    if (!activeConversation) return;
+    let txt = `${activeConversation.title.toUpperCase()}\n`;
+    txt += `Exported on: ${new Date().toLocaleString()}\n`;
+    txt += `-------------------------------------------\n\n`;
+    for (const m of activeConversation.messages) {
+      const roleName = m.role === 'user' ? 'USER' : 'ASSISTANT';
+      txt += `[${roleName}]:\n${m.content}\n\n`;
+    }
+    const blob = new Blob([txt], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeConversation.title.replace(/[^a-z0-9_-]/gi, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Exported conversation as Text (.txt)');
   };
 
   const hasMessages = messages.length > 0;
@@ -266,13 +381,205 @@ export function ChatView() {
                         textAlign: 'left',
                       }}
                     >
-                      <div style={{ fontSize: '12px', fontWeight: 500 }}>{m.name}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{m.description}</div>
+                      <span style={{ fontSize: '12px', fontWeight: 500 }}>{m.name}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{m.description}</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
+
+            {/* Platform Feature Action Buttons */}
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsPrivacyOpen(true)}
+              title="Privacy & Security Control Center"
+              style={{
+                background: 'rgba(34, 197, 94, 0.15)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                color: '#4ade80',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🛡️ Privacy
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={async () => {
+                const topic = prompt('Enter topic for Deep Research report:');
+                if (topic && topic.trim()) {
+                  toast.info(`Executing deep multi-source research for "${topic}"…`);
+                  const rep = await executeDeepResearch(topic.trim());
+                  setResearchReport(rep);
+                  setIsResearchOpen(true);
+                }
+              }}
+              title="Execute Deep Multi-Source Research"
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                color: '#c084fc',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🔬 Research
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsAssistantBuilderOpen(true)}
+              title="Build Custom AI Assistant"
+              style={{
+                background: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                color: '#60a5fa',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🛠️ Assistant
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => dispatch({ type: 'SET_SCREEN_GUIDE_OPEN', open: true })}
+              title="Screen Sharing & AI Interactive Task Guidance (Ctrl+Shift+S)"
+              style={{
+                background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(6, 182, 212, 0.25))',
+                border: '1px solid rgba(168, 85, 247, 0.5)',
+                color: '#e9d5ff',
+                padding: '3px 10px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 0 10px rgba(168, 85, 247, 0.2)',
+              }}
+            >
+              🖥️ Screen Guide
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsImageGenOpen(true)}
+              title="Image Generation & Creative Studio"
+
+              style={{
+                background: 'rgba(236, 72, 153, 0.15)',
+                border: '1px solid rgba(236, 72, 153, 0.3)',
+                color: '#f472b6',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🎨 Image Gen
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsCanvasOpen(true)}
+              title="Interactive Co-Editing Canvas Workspace"
+              style={{
+                background: 'rgba(20, 184, 166, 0.15)',
+                border: '1px solid rgba(20, 184, 166, 0.3)',
+                color: '#2dd4bf',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              ✍️ Canvas
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              title="Unified Global Search (Ctrl + K)"
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                color: '#fbbf24',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🔍 Search
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsAudioAnalysisOpen(true)}
+              title="Audio File & Meeting Intelligence"
+              style={{
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                color: '#818cf8',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🎧 Audio
+            </button>
+
+            <button
+              className="chat-model-badge"
+              onClick={() => setIsAudioDeviceOpen(true)}
+              title="Microphone Hardware Test & Speaker Settings"
+              style={{
+                background: 'rgba(14, 165, 233, 0.15)',
+                border: '1px solid rgba(14, 165, 233, 0.3)',
+                color: '#38bdf8',
+                padding: '3px 8px',
+                borderRadius: 'var(--r-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              🎙️ Mic Settings
+            </button>
+
+
+
+            {/* Token Counter Badge */}
+            {hasMessages && (
+              <span
+                style={{
+                  fontSize: '11px',
+                  color: totalEstimatedTokens > 30000 ? 'var(--error)' : 'var(--text-muted)',
+                  background: 'var(--bg-input)',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--r-xs)',
+                  border: '1px solid var(--border)',
+                }}
+                title={totalEstimatedTokens > 30000 ? 'Context size is large. Consider starting a new chat for optimal performance.' : 'Estimated token count'}
+              >
+                ~{totalEstimatedTokens.toLocaleString()} tokens {totalEstimatedTokens > 30000 && '⚠️'}
+              </span>
+            )}
           </div>
 
           {/* Export Actions */}
@@ -306,6 +613,21 @@ export function ChatView() {
               title="Export as JSON"
             >
               📥 .JSON
+            </button>
+            <button
+              onClick={exportAsText}
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                padding: '4px 8px',
+                borderRadius: 'var(--r-xs)',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+              title="Export as Plain Text"
+            >
+              📥 .TXT
             </button>
           </div>
         </div>
@@ -348,7 +670,7 @@ export function ChatView() {
         <div className="empty-state">
           <div className="empty-logo">{currentModeConfig.icon}</div>
           <div>
-            <p className="empty-heading">{currentModeConfig.name} Assistant</p>
+            <p className="empty-heading">{currentModeConfig.name} {t('assistant')}</p>
             <p className="empty-sub">
               {currentModeConfig.description}
             </p>
@@ -401,7 +723,7 @@ export function ChatView() {
       {/* Input Bar */}
       {activeConversation && (
         <InputBar
-          onSend={sendMessage}
+          onSend={handleSendMessageWithActionCheck}
           isStreaming={isStreaming}
           onStop={stopStreaming}
         />
@@ -410,11 +732,60 @@ export function ChatView() {
       {/* Show input even without a conversation (creates one on send) */}
       {!activeConversation && (
         <InputBar
-          onSend={createConversationAndSend}
+          onSend={handleSendMessageWithActionCheck}
           isStreaming={isStreaming}
           onStop={stopStreaming}
         />
       )}
+
+      {/* Feature Modals */}
+      <Suspense fallback={null}>
+        <PrivacyCenterModal
+          isOpen={isPrivacyOpen}
+          onClose={() => setIsPrivacyOpen(false)}
+        />
+        <ResearchReportModal
+          isOpen={isResearchOpen}
+          report={researchReport}
+          onClose={() => setIsResearchOpen(false)}
+        />
+        <DataAnalysisModal
+          isOpen={isDataOpen}
+          dataResult={dataResult}
+          onClose={() => setIsDataOpen(false)}
+        />
+        <CustomAssistantBuilderModal
+          isOpen={isAssistantBuilderOpen}
+          onClose={() => setIsAssistantBuilderOpen(false)}
+          onSaveAssistant={(asst) => {
+            toast.success(`Custom Assistant "${asst.name}" created!`);
+          }}
+        />
+        <ImageGenModal
+          isOpen={isImageGenOpen}
+          onClose={() => setIsImageGenOpen(false)}
+        />
+        <InteractiveCanvasModal
+          isOpen={isCanvasOpen}
+          onClose={() => setIsCanvasOpen(false)}
+        />
+        <GlobalSearchModal
+          isOpen={isGlobalSearchOpen}
+          onClose={() => setIsGlobalSearchOpen(false)}
+        />
+        <AudioAnalysisModal
+          isOpen={isAudioAnalysisOpen}
+          onClose={() => setIsAudioAnalysisOpen(false)}
+        />
+        <AudioDeviceModal
+          isOpen={isAudioDeviceOpen}
+          onClose={() => setIsAudioDeviceOpen(false)}
+        />
+      </Suspense>
     </main>
   );
 }
+
+
+
+

@@ -1,13 +1,18 @@
 {
   "name": "nova",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Nova AI Desktop Assistant with Voice, Vision & Screen Sharing Task Guidance",
+  "author": "Amandeep Singh",
   "type": "module",
   "main": "dist-electron/main.js",
   "build": {
     "appId": "com.nova.assistant",
     "productName": "Nova",
     "asar": true,
+    "directories": {
+      "output": "dist-app"
+    },
     "files": [
       "dist/**",
       "dist-electron/**",
@@ -20,15 +25,20 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     }
   },
   "scripts": {
     "dev": "vite",
-    "electron": "electron .",
-    "start": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "start": "vite",
     "build": "vite build",
-    "dist": "electron-builder"
+    "dist": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "react": "^19.2.8",

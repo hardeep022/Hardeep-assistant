@@ -1,476 +1,494 @@
-# Technical Requirements
+# Nova AI Operating System (Nova AI OS)
+## Document 04: Technical Architecture & System Infrastructure Specification
 
-## Frontend Tech Stack
+---
 
-| Technology | Role | Version |
+### 1. Executive Summary
+This document establishes the definitive, commercial-grade technical architecture, multi-process topology, IPC communication substrate, database engine specifications, and native operating system integration layers for the **Nova AI Operating System (Nova AI OS)**.
+
+Nova is engineered as a distributed, multi-process desktop operating system runtime on Windows 10/11. The system architecture combines: (1) an Electron 34 / Node.js 22 presentation and native window lifecycle manager, (2) a high-performance React 19 / TypeScript / Vite user interface canvas, (3) a dedicated Python 3.11 / C++ AI & Voice daemon orchestrating local speech-to-text (Faster-Whisper), text-to-speech (Kokoro-82M), and local Small Language Models (Ollama / llama.cpp), (4) an embedded AES-256 encrypted relational & vector storage engine (SQLCipher + `sqlite-vss`), and (5) a Windows Win32 / UI Automation native bridge.
+
+---
+
+### 2. Vision
+To create an unbreakable, memory-efficient, low-latency software architecture that seamlessly unites local hardware acceleration (NVIDIA CUDA / DirectML / CPU AVX2) with native Windows subsystem automation, delivering sub-second intent execution with absolute data privacy.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          NOVA DESKTOP MULTI-PROCESS ARCHITECTURE            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  RENDERER PROCESS (Chromium / React 19 / Vite / Web Audio)                  │
+│  • Voice Orb UI (60 FPS SVG/Canvas)                                         │
+│  • Virtualized Chat, Workspace Canvas & Modals                              │
+│  • Audio Ingestion via WebRTC VAD & ScriptProcessorNode                     │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│                                      │ ContextBridge (Isolated IPC)         │
+│  MAIN PROCESS (Electron 34 / Node.js 22)                                    │
+│  • Window Lifecycle, System Tray & Watchdog Supervisor                      │
+│  • Windows DPAPI SafeStorage (Encrypted Keys & Config)                      │
+│  • Action Risk Classifier & Native Win32 Shell Bridge                       │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│                                      │ Local Named Pipe / Socket IPC        │
+│  INTELLIGENCE & VOICE DAEMON (Python 3.11 / C++ Addon)                      │
+│  • Faster-Whisper (Int8 STT) + Kokoro-82M (ONNX TTS)                        │
+│  • Coordinator & Multi-Agent Cognitive Scheduler                            │
+│  • SQLCipher (AES-256) + sqlite-vss (384-dim Vector Engine)                 │
+│  • Local SLM (Ollama/llama.cpp) + Cloud Router (Gemini/OpenAI/Claude)       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. Objectives
+1. **Multi-Process Fault Isolation**: Ensure crashes in speech synthesis, local LLM inference, or web requests never crash the UI shell.
+2. **Deterministic IPC Protocol**: Implement strongly-typed, bidirectional asynchronous RPC channels with backpressure control.
+3. **Sub-350ms Voice Streaming Pipeline**: Achieve end-to-end voice latency from speech termination to first audio packet output.
+4. **Encrypted Local Storage at Rest**: Store all relational entities, dialogue archives, and vector embeddings in AES-256-CBC SQLCipher containers.
+5. **Zero Administrative Privilege Requirements**: Run entirely in user space (Standard User) with optional UAC elevation only for explicitly requested administrative tools.
+
+---
+
+### 4. Product Philosophy & Architectural Tenets
+* **Decoupled Intelligence**: The UI layer remains completely agnostic of whether intelligence is provided by a local 1.5B model, an on-device 8B model, or a frontier cloud API.
+* **Resilient Watchdogs**: Every background process is actively monitored by an Electron supervisor thread capable of hot-restarting dead services in <1.2s.
+* **Zero Plaintext In-Transit / At-Rest**: Cryptographic keys and personal memories are decrypted on-demand in protected memory buffers and scrubbed immediately after use.
+* **Minimal Resource Idle Footprint**: Background daemon idles at <0.5% CPU and <180MB RAM when no voice or inference sessions are active.
+
+---
+
+### 5. Scope
+* Electron 34 Main & Renderer Process Architecture.
+* Secure ContextBridge Preload Layer.
+* Python 3.11 Background Intelligence & Voice Runtime.
+* SQLCipher + SQLite-VSS Database Subsystem.
+* Windows Win32 Shell & UI Automation Integration.
+* AI Model Router (Ollama, Gemini, OpenAI, Anthropic).
+
+---
+
+### 6. Out of Scope
+* Ring-0 Windows Kernel driver development.
+* Multi-tenant server-side cloud hosting of user databases.
+* Direct manipulation of UEFI/BIOS firmware settings.
+
+---
+
+### 7. User Personas & Technical Use Cases
+
+| Persona | Technical Workflow | Architectural Requirement |
 |---|---|---|
-| **Electron** | Desktop application framework (native window, system tray, IPC, OS integration) | 30+ |
-| **React** | UI rendering framework (component-based renderer process) | 18+ |
-| **React Router** | Client-side navigation between screens | 6+ |
-| **Zustand** | Lightweight state management (simpler than Redux for desktop app scope) | 4+ |
-| **Vite** | Build tool for React (fast HMR during development) | 5+ |
-| **Inter Font** | Primary UI font (bundled, no network dependency) | — |
-| **JetBrains Mono** | Monospace font for code blocks | — |
-| **Noto Sans Devanagari/Gurmukhi** | Hindi and Punjabi fallback fonts | — |
+| **Arjun (Dev)** | Streams 4,000-token code refactoring while running local Ollama model. | High-throughput streaming IPC with zero UI thread jank (<16ms frame budget). |
+| **Simran (Researcher)** | Ingests 50-page PDF and queries episodic vector memory in Punjabi. | Fast batch vectorization (`sqlite-vss`) and UTF-8 Gurmukhi text normalization. |
+| **Ravi (Exec)** | Activates hands-free voice via wake-word from across the room. | Low-power WebRTC VAD listening thread with sub-2% idle CPU footprint. |
 
-## Backend Tech Stack
+---
 
-| Technology | Role | Version |
+### 8. Detailed Functional Technical Requirements
+
+#### 8.1 Process Topology & Lifecycle
+* **PTR-101 (Main Process Supervised Spawning)**: On application startup, Electron spawns the Python Intelligence Daemon via `child_process.spawn()` with unbuffered stdio pipes (`PYTHONUNBUFFERED=1`).
+* **PTR-102 (Healthcheck Heartbeat)**: The Main process dispatches a ping message over IPC every 5,000ms. If the daemon fails to reply within 3,000ms across 2 consecutive cycles, the supervisor terminates the PID and restarts the daemon.
+* **PTR-103 (Clean Shutdown)**: On `app.before-quit`, Electron sends a `SIGTERM` signal, allowing the daemon 2,000ms to flush SQLCipher WAL logs and release COM audio interfaces before issuing `SIGKILL`.
+
+#### 8.2 Inter-Process Communication (IPC) Protocol
+* **PTR-201 (Renderer-to-Main ContextBridge)**: Strictly isolate renderer processes by setting `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`.
+* **PTR-202 (Streaming Chunk Protocol)**: AI tokens and TTS audio packets stream over discrete IPC event channels (`chat:chunk`, `chat:done`, `voice:chunk`, `voice:state`) rather than monolithic promises.
+
+#### 8.3 Vector & Relational Storage Subsystem
+* **PTR-301 (SQLCipher Engine)**: SQLite 3.45+ compiled with SQLCipher v4.5.6 using 256-bit AES-CBC encryption with PBKDF2 key derivation (64,000 iterations).
+* **PTR-302 (Vector Search Extension)**: Dynamic loading of `sqlite-vss0.dll` providing HNSW index acceleration for 384-dimensional cosine similarity embeddings.
+
+#### 8.4 Speech & Audio Pipeline
+* **PTR-401 (Audio Ingestion)**: Native 16,000Hz 16-bit mono PCM stream captured via `sounddevice` or Web Audio API.
+* **PTR-402 (STT Engine)**: Faster-Whisper utilizing CTranslate2 engine with Int8 quantization on CPU/GPU.
+* **PTR-403 (TTS Engine)**: Kokoro-82M neural model running on ONNX Runtime with sub-180ms time-to-first-audio.
+
+---
+
+### 9. Non-Functional Technical Requirements
+
+| Metric | Target Limit | Measurement Protocol |
 |---|---|---|
-| **Python** | Backend runtime (embedded/portable distribution) | 3.11+ |
-| **FastAPI** | API framework (async, auto-docs, type validation) | 0.100+ |
-| **Uvicorn** | ASGI server for FastAPI | 0.24+ |
-| **SQLAlchemy** | ORM for database operations | 2.0+ |
-| **SQLCipher** | Encrypted SQLite (AES-256-CBC) | 4.5+ |
-| **Pydantic** | Request/response validation and serialization | 2.0+ |
-| **bcrypt** | Password hashing | 4.0+ |
-| **PyJWT** | JWT token generation and verification | 2.8+ |
-| **faster-whisper** | Local STT engine (Whisper via CTranslate2) | 0.10+ |
-| **pyttsx3** | Local TTS engine (Windows SAPI5) | 2.90+ |
-| **pvporcupine** | Wake word detection engine | 3.0+ |
-| **langdetect** | Language detection fallback | 1.0+ |
-| **zxcvbn** | Password strength estimation | — |
-| **ollama** | Local LLM runtime (external install) | 0.3+ |
-| **openai** | OpenAI API client (for cloud mode) | 1.0+ |
-| **google-generativeai** | Google Gemini API client (for cloud mode) | 0.5+ |
+| **Base App Memory (Idle)** | <180MB RAM | Windows Task Manager Private Working Set |
+| **Active Inference Memory** | <4.2GB RAM | Total system memory allocation during Qwen 1.5B generation |
+| **Process Boot Time** | <1,800ms | Performance.now() from main.ts execution to React mount |
+| **IPC Message Roundtrip** | <2.5ms | High-resolution timestamp delta across ContextBridge |
+| **WAL Checkpoint Latency** | <15ms | SQLite `PRAGMA wal_checkpoint(TRUNCATE)` benchmark |
 
 ---
 
-## Architecture
+### 10. System Architecture & Multi-Process Topology
 
-### Folder Structure
+```mermaid
+graph TD
+    subgraph Electron_Main_Process ["Electron Main Process (Node.js 22)"]
+        LifeCycle[App Lifecycle & Tray Manager]
+        IPCGateway[Secure IPC Router]
+        DPAPI[Windows DPAPI SafeStorage]
+        WinShell[Win32 ShellExecute & UIA Bridge]
+        Watchdog[Process Watchdog Supervisor]
+    end
 
-```
-NovaApp/
-├── nova-desktop/                    # Electron main process + packaging
-│   ├── main/
-│   │   ├── main.js                  # Electron main process entry point
-│   │   ├── window.js                # Window management (create, resize, minimize to tray)
-│   │   ├── tray.js                  # System tray icon, context menu
-│   │   ├── ipc-handlers.js          # IPC bridge (renderer ↔ main ↔ backend)
-│   │   ├── auto-updater.js          # electron-updater integration
-│   │   └── startup.js               # Windows auto-start registration
-│   ├── preload/
-│   │   └── preload.js               # Secure API surface exposed to renderer
-│   ├── build/
-│   │   ├── icon.ico                 # App icon (Windows ICO format)
-│   │   └── installer-banner.bmp     # NSIS installer branding
-│   ├── package.json                 # Electron dependencies + electron-builder config
-│   └── electron-builder.yml         # Build configuration (NSIS, auto-update, signing)
-│
-├── nova-ui/                         # React app (Electron renderer process)
-│   ├── src/
-│   │   ├── components/              # Reusable UI components
-│   │   │   ├── ChatMessage.jsx      # Individual chat message bubble
-│   │   │   ├── ChatInput.jsx        # Text + voice input bar
-│   │   │   ├── Sidebar.jsx          # Navigation sidebar
-│   │   │   ├── TaskCard.jsx         # Task list item
-│   │   │   ├── NoteEditor.jsx       # Note editing component
-│   │   │   ├── ReminderItem.jsx     # Reminder list item
-│   │   │   ├── VoiceOrb.jsx         # Voice interaction animation
-│   │   │   ├── PasswordMeter.jsx    # Password strength indicator
-│   │   │   ├── HashVerifier.jsx     # File hash tool UI
-│   │   │   ├── ThemeToggle.jsx      # Dark/Light/System theme switch
-│   │   │   ├── Toast.jsx            # Toast notification component
-│   │   │   └── Modal.jsx            # Confirmation/dialog modal
-│   │   ├── pages/                   # Screen-level components
-│   │   │   ├── LoginPage.jsx
-│   │   │   ├── RegisterPage.jsx
-│   │   │   ├── HomePage.jsx
-│   │   │   ├── ChatPage.jsx         # Shared chat UI (all assistant modes)
-│   │   │   ├── ProductivityPage.jsx
-│   │   │   ├── CybersecurityPage.jsx
-│   │   │   ├── TaskManagementPage.jsx
-│   │   │   ├── ConversationPage.jsx
-│   │   │   └── SettingsPage.jsx
-│   │   ├── hooks/                   # Custom React hooks
-│   │   │   ├── useAuth.js           # Authentication state and actions
-│   │   │   ├── useChat.js           # Chat message sending/receiving
-│   │   │   ├── useVoice.js          # Voice recording and playback
-│   │   │   ├── useTasks.js          # Task CRUD operations
-│   │   │   └── useTheme.js          # Theme management
-│   │   ├── services/                # API client and external service interfaces
-│   │   │   ├── api.js               # HTTP client for FastAPI backend
-│   │   │   ├── websocket.js         # WebSocket client for voice streaming
-│   │   │   └── nova-bridge.js       # Wrapper around window.nova (preload API)
-│   │   ├── store/                   # Zustand state stores
-│   │   │   ├── authStore.js
-│   │   │   ├── chatStore.js
-│   │   │   ├── taskStore.js
-│   │   │   ├── settingsStore.js
-│   │   │   └── voiceStore.js
-│   │   ├── i18n/                    # Internationalization
-│   │   │   ├── en.json              # English strings
-│   │   │   ├── hi.json              # Hindi strings
-│   │   │   └── pa.json              # Punjabi strings
-│   │   ├── styles/                  # CSS
-│   │   │   ├── tokens.css           # Design tokens (colors, spacing, typography)
-│   │   │   ├── global.css           # Global styles and resets
-│   │   │   └── themes.css           # Dark and light theme definitions
-│   │   ├── App.jsx                  # Root component with routing
-│   │   └── main.jsx                 # React entry point
-│   ├── public/
-│   │   ├── index.html
-│   │   └── assets/                  # Static assets (icons, sounds)
-│   │       ├── chime.wav            # Wake word activation sound
-│   │       └── error.wav            # Error notification sound
-│   ├── package.json
-│   └── vite.config.js
-│
-├── nova-api/                        # FastAPI backend
-│   ├── main.py                      # FastAPI app entry point + CORS + lifespan
-│   ├── config.py                    # Configuration management (env vars, defaults)
-│   ├── routers/                     # API route modules
-│   │   ├── auth.py                  # /api/auth/* routes
-│   │   ├── chat.py                  # /api/chat/* routes
-│   │   ├── tasks.py                 # /api/tasks/* routes
-│   │   ├── reminders.py             # /api/reminders/* routes
-│   │   ├── notes.py                 # /api/notes/* routes
-│   │   ├── conversations.py         # /api/conversations/* routes
-│   │   ├── actions.py               # /api/actions/* routes (system actions)
-│   │   ├── preferences.py           # /api/preferences/* routes
-│   │   └── voice.py                 # /api/voice/* routes + WebSocket
-│   ├── models/                      # SQLAlchemy ORM models + Pydantic schemas
-│   │   ├── database.py              # SQLAlchemy engine + session factory
-│   │   ├── user.py                  # User model + schemas
-│   │   ├── task.py                  # Task model + schemas
-│   │   ├── reminder.py              # Reminder model + schemas
-│   │   ├── note.py                  # Note model + schemas
-│   │   ├── conversation.py          # Conversation model + schemas
-│   │   ├── message.py               # Message model + schemas
-│   │   ├── preference.py            # UserPreference model + schemas
-│   │   ├── session.py               # Session model + schemas
-│   │   └── action_log.py            # ActionLog model + schemas
-│   ├── services/                    # Business logic layer
-│   │   ├── ai_router.py             # AI model routing (local vs cloud)
-│   │   ├── ollama_service.py        # Ollama client for local LLM
-│   │   ├── openai_service.py        # OpenAI API client
-│   │   ├── gemini_service.py        # Google Gemini API client
-│   │   ├── prompt_service.py        # System prompts + context injection
-│   │   ├── stt_service.py           # Speech-to-Text processing
-│   │   ├── tts_service.py           # Text-to-Speech synthesis
-│   │   ├── wake_word_service.py     # Porcupine wake word detection
-│   │   ├── action_executor.py       # System action execution (allowlisted)
-│   │   ├── auth_service.py          # Authentication + JWT logic
-│   │   ├── hash_service.py          # File hash generation/verification
-│   │   ├── password_checker.py      # Password strength analysis (zxcvbn)
-│   │   └── language_service.py      # Language detection + switching
-│   ├── database/                    # Database setup and migrations
-│   │   ├── init_db.py               # Create tables, run migrations
-│   │   ├── backup.py                # Automated daily backups
-│   │   └── migrations/              # Schema migration scripts
-│   │       ├── 001_initial.py
-│   │       └── ...
-│   ├── middleware/                   # FastAPI middleware
-│   │   ├── auth_middleware.py        # JWT validation middleware
-│   │   └── error_handler.py         # Global error handler
-│   └── requirements.txt             # Python dependencies
-│
-└── nova-lib/                        # Shared utilities and constants
-    ├── constants.py                 # Shared constants (risk levels, action types)
-    ├── types.py                     # Shared TypedDict / Pydantic base types
-    ├── validators.py                # Input validation utilities
-    └── i18n.py                      # Backend internationalization helpers
+    subgraph Renderer_Process ["Renderer Process (Chromium / React 19)"]
+        UIApp[React UI Shell]
+        ChatEngine[Chat & Message Virtualizer]
+        VoiceOrbUI[Voice Orb Visualizer]
+        WebAudio[Web Audio Capture & VAD]
+    end
+
+    subgraph Intelligence_Daemon ["Python 3.11 / C++ Intelligence Daemon"]
+        DaemonRouter[FastAPI / IPC Socket Router]
+        STTEngine[Faster-Whisper STT Int8]
+        TTSEngine[Kokoro-82M ONNX TTS]
+        AgentEngine[Coordinator & Multi-Agent Scheduler]
+        LocalLLM[Ollama Client / llama.cpp]
+        CloudLLM[Cloud Provider Router]
+        DBEngine[SQLCipher + sqlite-vss Vector DB]
+    end
+
+    UIApp <-->|ContextBridge IPC| IPCGateway
+    VoiceOrbUI <-->|Audio Buffers| IPCGateway
+    Watchdog -->|Spawn / Monitor / Restart| Intelligence_Daemon
+    IPCGateway <-->|Local Named Pipe / Socket| DaemonRouter
+    DaemonRouter <--> STTEngine
+    DaemonRouter <--> TTSEngine
+    DaemonRouter <--> AgentEngine
+    AgentEngine <--> LocalLLM
+    AgentEngine <--> CloudLLM
+    AgentEngine <--> DBEngine
+    IPCGateway <--> DPAPI
+    IPCGateway <--> WinShell
 ```
 
 ---
 
-## API Specification
+### 11. Sequence Diagrams
 
-### Authentication
+#### 11.1 System Bootstrapping & Multi-Process Handshake
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `POST` | `/api/auth/register` | `{ display_name, username, password, language }` | `{ user_id, username, display_name, recovery_key, token }` | None |
-| `POST` | `/api/auth/login` | `{ username, password }` | `{ user_id, username, display_name, token }` | None |
-| `POST` | `/api/auth/logout` | — | `204 No Content` | JWT |
-| `POST` | `/api/auth/refresh` | — | `{ token }` | JWT |
-| `POST` | `/api/auth/recover` | `{ username, recovery_key, new_password }` | `{ success: true }` | None |
-| `PUT` | `/api/auth/password` | `{ current_password, new_password }` | `{ success: true }` | JWT |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant OS as Windows OS
+    participant Main as Electron Main Process
+    participant Daemon as Python Intelligence Daemon
+    participant Renderer as React Renderer Canvas
 
-### Chat / AI
+    OS->>Main: Launch nova.exe
+    Main->>Main: Initialize SafeStorage (DPAPI Key)
+    Main->>Daemon: Spawn Process: python voice_service.py
+    Daemon->>Daemon: Load SQLCipher DB & sqlite-vss
+    Daemon->>Daemon: Initialize Faster-Whisper & Kokoro TTS
+    Daemon-->>Main: IPC Handshake: { status: "ready", pid: 8492 }
+    Main->>Renderer: CreateWindow() -> loadURL(http://localhost:5173)
+    Renderer->>Renderer: Mount React App & I18n Context
+    Renderer->>Main: invoke('settings:get')
+    Main-->>Renderer: Return Safe Settings (Encrypted Keys Stripped)
+    Renderer-->>OS: Display Interactive Window (Cold Boot: <1.8s)
+```
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `POST` | `/api/chat/message` | `{ message, conversation_id?, mode }` | `{ response, conversation_id, language }` | JWT |
-| `POST` | `/api/chat/message/stream` | `{ message, conversation_id?, mode }` | SSE stream: `{ token, is_final }` | JWT |
-| `GET` | `/api/chat/models` | — | `{ local: [...], cloud: [...], active }` | JWT |
-| `PUT` | `/api/chat/model` | `{ model_id, type }` | `{ success: true }` | JWT |
+---
 
-### Conversations
+### 12. Mermaid State Diagram: Native IPC Lifecycle
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `GET` | `/api/conversations` | Query: `?page=1&limit=20&search=` | `{ conversations: [...], total, page }` | JWT |
-| `GET` | `/api/conversations/:id` | — | `{ conversation_id, title, messages: [...], created_at }` | JWT |
-| `PUT` | `/api/conversations/:id` | `{ title }` | `{ conversation }` | JWT |
-| `DELETE` | `/api/conversations/:id` | — | `204 No Content` | JWT |
-| `GET` | `/api/conversations/:id/export` | Query: `?format=txt|json` | File download | JWT |
+```mermaid
+stateDiagram-v2
+    [*] --> Disconnected
+    Disconnected --> Spawning : Main Process Launches Daemon
+    Spawning --> Handshake : Stdio Pipe Established
+    Handshake --> Ready : Daemon Emits Ready Event
+    Ready --> Busy : Processing Audio / Inference
+    Busy --> Ready : Stream Done / Response Complete
+    Ready --> Terminating : App Quit Triggered
+    Busy --> Crashed : Unhandled Exception / OOM
+    Crashed --> Spawning : Watchdog Triggers Auto-Restart (<1.2s)
+    Terminating --> [*] : Resources Released Cleanly
+```
 
-### Tasks
+---
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `GET` | `/api/tasks` | Query: `?status=&priority=&due=today|upcoming|overdue` | `{ tasks: [...], total }` | JWT |
-| `POST` | `/api/tasks` | `{ description, due_date?, priority?, tags? }` | `{ task }` | JWT |
-| `GET` | `/api/tasks/:id` | — | `{ task }` | JWT |
-| `PUT` | `/api/tasks/:id` | `{ description?, due_date?, priority?, status?, tags? }` | `{ task }` | JWT |
-| `PATCH` | `/api/tasks/:id/complete` | — | `{ task }` | JWT |
-| `DELETE` | `/api/tasks/:id` | — | `204 No Content` (soft delete) | JWT |
+### 13. Database Schema & Migration Architecture
 
-### Reminders
+```sql
+-- Database Configuration
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA foreign_keys = ON;
+PRAGMA cipher_page_size = 4096;
+PRAGMA kdf_iter = 64000;
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `GET` | `/api/reminders` | Query: `?status=active|fired|dismissed` | `{ reminders: [...] }` | JWT |
-| `POST` | `/api/reminders` | `{ description, remind_at, repeat? }` | `{ reminder }` | JWT |
-| `PUT` | `/api/reminders/:id` | `{ description?, remind_at?, enabled? }` | `{ reminder }` | JWT |
-| `DELETE` | `/api/reminders/:id` | — | `204 No Content` | JWT |
+-- Schema Version Tracking
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at INTEGER NOT NULL,
+    description TEXT NOT NULL
+);
 
-### Notes
+-- Users Table
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    recovery_key_hash TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT 'en',
+    created_at INTEGER NOT NULL
+);
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `GET` | `/api/notes` | Query: `?search=&tag=&sort=updated|created` | `{ notes: [...], total }` | JWT |
-| `POST` | `/api/notes` | `{ title, content, tags? }` | `{ note }` | JWT |
-| `GET` | `/api/notes/:id` | — | `{ note }` | JWT |
-| `PUT` | `/api/notes/:id` | `{ title?, content?, tags? }` | `{ note }` | JWT |
-| `DELETE` | `/api/notes/:id` | — | `204 No Content` (soft delete) | JWT |
+-- Active Preferences Table
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT PRIMARY KEY,
+    theme TEXT NOT NULL DEFAULT 'dark',
+    default_model TEXT NOT NULL DEFAULT 'qwen2.5-coder:1.5b',
+    ollama_url TEXT NOT NULL DEFAULT 'http://localhost:11434',
+    wake_word_enabled INTEGER NOT NULL DEFAULT 1,
+    voice_speed REAL NOT NULL DEFAULT 1.0,
+    auto_speak INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
 
-### System Actions
+---
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `POST` | `/api/actions/open` | `{ target, type: "app"|"website"|"file"|"folder"|"settings" }` | `{ status, risk_level, requires_confirmation }` | JWT |
-| `POST` | `/api/actions/confirm` | `{ action_id }` | `{ status: "executed"|"failed", error? }` | JWT |
-| `GET` | `/api/actions/log` | Query: `?page=1&limit=50` | `{ logs: [...], total }` | JWT |
+### 14. Core REST & WebSocket Daemon APIs
 
-### Cybersecurity Tools
+```typescript
+// REST Endpoint Definitions on http://127.0.0.1:49215
+export interface DaemonAPIEndpoints {
+  // System Health
+  'GET /health': () => { status: 'healthy'; uptime: number; models_loaded: string[] };
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `POST` | `/api/security/password-check` | `{ password }` | `{ score, strength, suggestions, crack_time }` | JWT |
-| `POST` | `/api/security/hash` | `{ file_path, algorithm: "md5"|"sha256" }` | `{ hash, algorithm, file_name }` | JWT |
-| `POST` | `/api/security/hash/verify` | `{ file_path, expected_hash, algorithm }` | `{ match: boolean, computed_hash }` | JWT |
+  // Intent & Action Routing
+  'POST /v1/agent/dispatch': {
+    body: { query: string; context: ActiveContext; model: string };
+    response: { plan: ExecutionPlan; initial_response: string };
+  };
 
-### User Preferences
+  // Memory Operations
+  'POST /v1/memory/insert': {
+    body: { content: string; tier: MemoryTier; category: string };
+    response: { memory_id: string; vector_id: number };
+  };
+  'POST /v1/memory/search': {
+    body: { query: string; limit: number; min_score: number };
+    response: { results: MemorySearchResult[] };
+  };
+}
+```
 
-| Method | Route | Request Body | Response | Auth |
-|---|---|---|---|---|
-| `GET` | `/api/preferences` | — | `{ preferences }` | JWT |
-| `PUT` | `/api/preferences` | `{ key, value }` | `{ preferences }` | JWT |
-| `PUT` | `/api/preferences/bulk` | `{ preferences: { key: value, ... } }` | `{ preferences }` | JWT |
+---
 
-### Voice (WebSocket)
+### 15. IPC Protocols & Context Bridge API
 
-| Endpoint | Protocol | Description |
+```typescript
+// Defined in electron/preload.ts
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('nova', {
+  // Chat Streaming Channels
+  sendMessage: (payload: ChatRequestPayload) => ipcRenderer.send('chat:send', payload),
+  onChunk: (callback: (chunk: string) => void) => {
+    const handler = (_: any, chunk: string) => callback(chunk);
+    ipcRenderer.on('chat:chunk', handler);
+    return () => ipcRenderer.removeListener('chat:chunk', handler);
+  },
+  onDone: (callback: (fullText: string) => void) => {
+    const handler = (_: any, fullText: string) => callback(fullText);
+    ipcRenderer.on('chat:done', handler);
+    return () => ipcRenderer.removeListener('chat:done', handler);
+  },
+  onError: (callback: (err: string) => void) => {
+    const handler = (_: any, err: string) => callback(err);
+    ipcRenderer.on('chat:error', handler);
+    return () => ipcRenderer.removeListener('chat:error', handler);
+  },
+  clearListeners: () => {
+    ipcRenderer.removeAllListeners('chat:chunk');
+    ipcRenderer.removeAllListeners('chat:done');
+    ipcRenderer.removeAllListeners('chat:error');
+  },
+
+  // Settings & Keychain
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (settings: any) => ipcRenderer.invoke('settings:set', settings),
+  getOllamaModels: (url: string) => ipcRenderer.invoke('ollama:models', url),
+  testProviderConnection: (provider: string, key: string, url?: string) =>
+    ipcRenderer.invoke('settings:test', provider, key, url),
+
+  // Native Actions
+  executeAction: (action: ActionRequest) => ipcRenderer.invoke('action:execute', action),
+  getSystemDiagnostics: () => ipcRenderer.invoke('system:diagnostics'),
+});
+```
+
+---
+
+### 16. Component Design & Native Layer Architecture
+
+```
+electron/
+├── main.ts              # Application coordinator, window creator, IPC handlers
+├── preload.ts           # Sandboxed ContextBridge binding
+├── security.ts          # DPAPI key encryption & command allowlist validators
+├── nativeShell.ts       # Win32 ShellExecute, UIA, and process management
+└── watchdog.ts          # Background daemon supervisor & healthcheck monitor
+```
+
+---
+
+### 17. Folder Structure
+
+```
+Nova/
+├── build/               # App icons & installer assets
+├── dist/                # Production frontend bundle
+├── dist-electron/       # Transpiled main & preload scripts
+├── electron/            # TypeScript electron main process
+│   ├── main.ts
+│   ├── preload.ts
+│   ├── security.ts
+│   └── nativeShell.ts
+├── prd/                 # Master Enterprise PRDs (01 to 11)
+├── src/                 # React 19 Frontend
+├── voice/               # Python Voice & Intelligence Daemon
+│   ├── voice_service.py
+│   ├── vad.py
+│   └── requirements.txt
+├── package.json
+├── tsconfig.json
+├── tsconfig.node.json
+└── vite.config.ts
+```
+
+---
+
+### 18. Configuration Management & Environment Variables
+
+```typescript
+export interface AppConfig {
+  NODE_ENV: 'development' | 'production';
+  VITE_DEV_SERVER_URL?: string;
+  NOVA_DAEMON_PORT: number; // Default: 49215
+  SQLCIPHER_DB_PATH: string; // Default: %APPDATA%/Nova/nova-secure.db
+  SETTINGS_ENC_PATH: string; // Default: %APPDATA%/Nova/nova-settings.enc
+}
+```
+
+---
+
+### 19. Error Handling, Process Supervision & Watchdogs
+
+```mermaid
+flowchart TD
+    Daemon[Python Daemon Running] --> Heartbeat{Heartbeat Response in <3s?}
+    Heartbeat -- Yes --> Continue[Healthy Execution]
+    Heartbeat -- No (Timeout/Crash) --> IncFail[Increment Failure Counter]
+    IncFail --> CheckMax{Failures >= 2?}
+    CheckMax -- No --> Daemon
+    CheckMax -- Yes --> KillProcess[Kill Dead Process Tree (PID)]
+    KillProcess --> Respawn[Spawn Fresh Python Daemon]
+    Respawn --> ReconnectIPC[Re-establish IPC Named Pipe]
+    ReconnectIPC --> NotifyUI[Emit Warning Toast to UI]
+```
+
+---
+
+### 20. Security Engineering & Process Sandboxing
+1. **Context Isolation**: No direct Node.js API access from React components.
+2. **SafeStorage DPAPI**: Master secrets encrypted using Windows `CryptProtectData`.
+3. **Strict Loopback URL Enforcement**: Ollama URLs must strictly resolve to IPv4 loopback (`127.0.0.1`) or `localhost` to prevent SSRF attacks.
+4. **Shell Injection Prevention**: Executables launched via `ShellExecuteExW` with explicit parameter escaping rather than raw `cmd.exe /c` string interpolation.
+
+---
+
+### 21. Privacy Engineering
+* **Zero-Cloud SQL Storage**: The database file resides exclusively at `%APPDATA%/Nova/` and is never synced to external servers.
+* **Ephemeral Prompt Buffers**: User messages sent to cloud providers (if enabled) are never retained in cloud provider training logs (enforced via Zero Data Retention API headers).
+
+---
+
+### 22. Accessibility Engineering (a11y)
+* Native Windows UI Automation (UIA) bridge exposing the application window as an accessible container with role definitions for all custom buttons and lists.
+
+---
+
+### 23. Performance Targets & Resource Allocation
+
+| Metric | Target Limit | Enforcement |
 |---|---|---|
-| `ws://localhost:{port}/api/voice/stream` | WebSocket | Bidirectional audio streaming for STT/TTS |
-
-WebSocket message types documented in [06_Voice_Architecture.md](file:///c:/Users/Amandeep Singh/Desktop/prd/06_Voice_Architecture.md).
-
-### System / Health
-
-| Method | Route | Response | Auth |
-|---|---|---|---|
-| `GET` | `/api/health` | `{ status: "ok", version, uptime }` | None |
-| `GET` | `/api/system/info` | `{ os, memory, cpu, gpu, ollama_status }` | JWT |
+| **Max Heap Allocation (Renderer)** | <250MB | V8 `--max-old-space-size=512` |
+| **Max Heap Allocation (Main)** | <120MB | Node.js GC optimization |
+| **Audio Pipe Latency** | <40ms | Circular buffer size: 1,600 samples (100ms chunks) |
 
 ---
 
-## Data Schema
-
-### Complete Table Structure
-
-#### `users`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `user_id` | UUID | PRIMARY KEY, DEFAULT uuid4() | Unique user identifier |
-| `username` | VARCHAR(50) | UNIQUE, NOT NULL | Login username |
-| `display_name` | VARCHAR(100) | NOT NULL | Display name shown in UI |
-| `password_hash` | VARCHAR(255) | NOT NULL | bcrypt hashed password |
-| `recovery_key_hash` | VARCHAR(255) | NOT NULL | bcrypt hashed recovery key |
-| `language` | VARCHAR(5) | NOT NULL, DEFAULT 'en' | Preferred language: 'en', 'hi', 'pa' |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Account creation timestamp |
-| `updated_at` | DATETIME | NOT NULL, DEFAULT now() | Last update timestamp |
-| `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | Soft-delete flag |
-| `last_login_at` | DATETIME | NULLABLE | Last successful login |
-| `failed_login_count` | INTEGER | NOT NULL, DEFAULT 0 | Consecutive failed login attempts |
-| `locked_until` | DATETIME | NULLABLE | Account lock expiry (after too many failures) |
-
-#### `sessions`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `session_id` | UUID | PRIMARY KEY | Unique session identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Session owner |
-| `token_hash` | VARCHAR(255) | NOT NULL | Hashed JWT token (for revocation) |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Session start |
-| `expires_at` | DATETIME | NOT NULL | Token expiry time |
-| `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | Session validity |
-| `device_info` | VARCHAR(255) | NULLABLE | Device/OS information |
-
-**Index:** `idx_sessions_user_id` on `user_id`
-
-#### `conversations`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `conversation_id` | UUID | PRIMARY KEY | Unique conversation identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Conversation owner |
-| `title` | VARCHAR(200) | NOT NULL, DEFAULT 'New Conversation' | Auto-generated or user-set title |
-| `mode` | VARCHAR(20) | NOT NULL, DEFAULT 'general' | Assistant mode: 'coding', 'learning', 'research', 'writing', 'cybersecurity', 'general' |
-| `summary` | TEXT | NULLABLE | LLM-generated summary of older messages |
-| `language` | VARCHAR(5) | NOT NULL, DEFAULT 'en' | Dominant language of conversation |
-| `message_count` | INTEGER | NOT NULL, DEFAULT 0 | Total messages in conversation |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Conversation start |
-| `updated_at` | DATETIME | NOT NULL, DEFAULT now() | Last message timestamp |
-| `is_deleted` | BOOLEAN | NOT NULL, DEFAULT FALSE | Soft delete flag |
-| `deleted_at` | DATETIME | NULLABLE | Soft delete timestamp (purge after 30 days) |
-| `is_pinned` | BOOLEAN | NOT NULL, DEFAULT FALSE | Pinned/favorite flag |
-
-**Indexes:** `idx_conversations_user_id` on `user_id`, `idx_conversations_updated_at` on `updated_at`
-
-#### `conversation_messages`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `message_id` | UUID | PRIMARY KEY | Unique message identifier |
-| `conversation_id` | UUID | FOREIGN KEY → conversations.conversation_id, NOT NULL | Parent conversation |
-| `role` | VARCHAR(10) | NOT NULL | 'user', 'assistant', 'system' |
-| `content` | TEXT | NOT NULL | Message text content |
-| `language` | VARCHAR(5) | NOT NULL, DEFAULT 'en' | Message language |
-| `token_count` | INTEGER | NULLABLE | Token count for context management |
-| `model_used` | VARCHAR(50) | NULLABLE | Which AI model generated this response |
-| `input_type` | VARCHAR(10) | NOT NULL, DEFAULT 'text' | 'text' or 'voice' |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Message timestamp |
-
-**Index:** `idx_messages_conversation_id` on `conversation_id`, `idx_messages_created_at` on `created_at`
-
-#### `tasks`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `task_id` | UUID | PRIMARY KEY | Unique task identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Task owner |
-| `description` | TEXT | NOT NULL | Task description |
-| `status` | VARCHAR(20) | NOT NULL, DEFAULT 'pending' | 'pending', 'in_progress', 'completed' |
-| `priority` | VARCHAR(10) | NOT NULL, DEFAULT 'medium' | 'low', 'medium', 'high', 'urgent' |
-| `due_date` | DATETIME | NULLABLE | Task due date/time |
-| `tags` | JSON | NULLABLE | Array of tag strings |
-| `repeat` | VARCHAR(20) | NULLABLE | 'daily', 'weekly', 'monthly', NULL |
-| `completed_at` | DATETIME | NULLABLE | Completion timestamp |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Creation timestamp |
-| `updated_at` | DATETIME | NOT NULL, DEFAULT now() | Last update timestamp |
-| `is_deleted` | BOOLEAN | NOT NULL, DEFAULT FALSE | Soft delete flag |
-| `deleted_at` | DATETIME | NULLABLE | Soft delete timestamp |
-
-**Indexes:** `idx_tasks_user_id` on `user_id`, `idx_tasks_due_date` on `due_date`, `idx_tasks_status` on `status`
-
-#### `reminders`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `reminder_id` | UUID | PRIMARY KEY | Unique reminder identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Reminder owner |
-| `description` | TEXT | NOT NULL | Reminder text |
-| `remind_at` | DATETIME | NOT NULL | When to fire the reminder |
-| `repeat` | VARCHAR(20) | NULLABLE | 'daily', 'weekly', 'monthly', NULL |
-| `is_enabled` | BOOLEAN | NOT NULL, DEFAULT TRUE | Enable/disable toggle |
-| `status` | VARCHAR(20) | NOT NULL, DEFAULT 'pending' | 'pending', 'fired', 'dismissed' |
-| `fired_at` | DATETIME | NULLABLE | When the reminder actually fired |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Creation timestamp |
-| `updated_at` | DATETIME | NOT NULL, DEFAULT now() | Last update timestamp |
-
-**Index:** `idx_reminders_user_id` on `user_id`, `idx_reminders_remind_at` on `remind_at`
-
-#### `notes`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `note_id` | UUID | PRIMARY KEY | Unique note identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Note owner |
-| `title` | VARCHAR(200) | NOT NULL, DEFAULT 'Untitled Note' | Note title |
-| `content` | TEXT | NOT NULL, DEFAULT '' | Note content (markdown/plain text) |
-| `tags` | JSON | NULLABLE | Array of tag strings |
-| `is_sensitive` | BOOLEAN | NOT NULL, DEFAULT FALSE | Marked as sensitive data |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Creation timestamp |
-| `updated_at` | DATETIME | NOT NULL, DEFAULT now() | Last edit timestamp |
-| `is_deleted` | BOOLEAN | NOT NULL, DEFAULT FALSE | Soft delete flag |
-| `deleted_at` | DATETIME | NULLABLE | Soft delete timestamp |
-
-**Indexes:** `idx_notes_user_id` on `user_id`, `idx_notes_updated_at` on `updated_at`
-
-#### `user_preferences`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `preference_id` | UUID | PRIMARY KEY | Unique preference identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Preference owner |
-| `key` | VARCHAR(100) | NOT NULL | Preference key (e.g., 'theme', 'ai_mode', 'tts_engine') |
-| `value` | TEXT | NOT NULL | Preference value (JSON-encoded for complex values) |
-| `updated_at` | DATETIME | NOT NULL, DEFAULT now() | Last update timestamp |
-
-**Index:** `idx_preferences_user_id_key` UNIQUE on `(user_id, key)`
-
-#### `app_actions_log`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `log_id` | UUID | PRIMARY KEY | Unique log entry identifier |
-| `user_id` | UUID | FOREIGN KEY → users.user_id, NOT NULL | Action initiator |
-| `action_type` | VARCHAR(20) | NOT NULL | 'open_app', 'open_website', 'open_file', 'open_folder', 'open_settings' |
-| `action_detail` | TEXT | NOT NULL | What was opened (app name, URL, file path, etc.) |
-| `risk_level` | VARCHAR(10) | NOT NULL | 'safe', 'warning', 'blocked' |
-| `user_confirmed` | BOOLEAN | NULLABLE | Whether user confirmed (for warning-level actions) |
-| `result` | VARCHAR(10) | NOT NULL | 'success', 'failed', 'blocked', 'cancelled' |
-| `error_message` | TEXT | NULLABLE | Error details if action failed |
-| `created_at` | DATETIME | NOT NULL, DEFAULT now() | Action timestamp |
-
-**Index:** `idx_actions_user_id` on `user_id`, `idx_actions_created_at` on `created_at`
+### 24. Edge Cases & Hardware Contention
+1. **Multiple GPU Systems**: The native bridge detects NVIDIA discrete GPUs via `NVML` and automatically binds CTranslate2 to CUDA device 0 while falling back to CPU AVX2 if VRAM is insufficient.
+2. **Windows Sleep/Resume Cycle**: The main process detects `powerMonitor.on('resume')` and dispatches a reconnection ping to Ollama and audio streams to reinitialize COM audio devices.
 
 ---
 
-### Entity Relationship Diagram
+### 25. Acceptance Criteria
+* [x] Electron application boots cleanly and establishes ContextBridge isolation.
+* [x] Python intelligence daemon spawns automatically and passes healthcheck handshake.
+* [x] SQLCipher database opens with AES-256 encryption and loads `sqlite-vss` vector extension.
+* [x] Settings validator permits valid configuration properties without throwing payload errors.
+* [x] Streaming tokens and audio packets transmit smoothly over IPC with zero UI lockup.
 
-```
-┌──────────┐       ┌──────────────┐       ┌─────────────────────┐
-│  users   │──1:N──│ conversations│──1:N──│ conversation_messages│
-└──────────┘       └──────────────┘       └─────────────────────┘
-     │
-     ├──1:N──┌──────────┐
-     │       │  tasks   │
-     │       └──────────┘
-     │
-     ├──1:N──┌──────────┐
-     │       │reminders │
-     │       └──────────┘
-     │
-     ├──1:N──┌──────────┐
-     │       │  notes   │
-     │       └──────────┘
-     │
-     ├──1:N──┌──────────────────┐
-     │       │ user_preferences │
-     │       └──────────────────┘
-     │
-     ├──1:N──┌──────────┐
-     │       │ sessions │
-     │       └──────────┘
-     │
-     └──1:N──┌─────────────────┐
-             │ app_actions_log │
-             └─────────────────┘
+---
+
+### 26. Verification & Automated Test Cases
+
+```typescript
+describe('Nova Technical Architecture Tests', () => {
+  it('should validate and parse safe loopback URLs for Ollama', () => {
+    const isLoopbackUrl = (urlStr: string): boolean => {
+      try {
+        const u = new URL(urlStr);
+        return u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+      } catch { return false; }
+    };
+    expect(isLoopbackUrl('http://localhost:11434')).toBe(true);
+    expect(isLoopbackUrl('http://127.0.0.1:11434')).toBe(true);
+    expect(isLoopbackUrl('http://malicious-server.com')).toBe(false);
+  });
+
+  it('should strictly sanitize action request payload schemas', () => {
+    const isRecord = (val: unknown): val is Record<string, unknown> =>
+      typeof val === 'object' && val !== null && !Array.isArray(val);
+    expect(isRecord({ type: 'open_app', target: 'notepad.exe' })).toBe(true);
+    expect(isRecord(null)).toBe(false);
+  });
+});
 ```
 
 ---
 
-## Local Storage Approach
+### 27. Future Improvements
+* **Rust/C++ Core Daemon**: Transition Python backend services into a unified native Rust/C++ executable (`nova-core.exe`) to reduce memory footprint by 60%.
+* **Model Context Protocol (MCP) Server**: Embed an MCP server inside the Electron main process to expose desktop actions to external development tools.
 
-- **Primary:** SQLite (via SQLCipher) for all structured data
-- **Secondary:** Electron `safeStorage` for sensitive credentials (API keys, session tokens)
-- **File System:** `%LOCALAPPDATA%\Nova\` for models, logs, and backups
-- **No cloud storage** — all data remains on the user's machine
-- **Backup:** Automatic daily backups of the SQLite database to `data/backups/` (retain last 7 days)
-- **WAL Mode:** SQLite Write-Ahead Logging enabled for crash recovery and concurrent reads
+---
+
+### 28. Risks & Mitigations
+
+| Risk | Severity | Likelihood | Mitigation |
+|---|---|---|---|
+| **Python Environment Missing on End-User PC** | Critical | High | Bundle portable embedded Python 3.11 zip in production installer. |
+| **CUDA Driver Incompatibility** | High | Medium | Dual-target binary compilation with runtime CPU fallback detection. |
+| **File Lock on SQLite Database during Crash** | Medium | Low | WAL mode enabled by default; auto-recovery on restart. |
+
+---
+
+### 29. Open Questions & Technical Decisions
+* *TQ-01*: Should local LLM inference be managed by an embedded llama.cpp C++ DLL or via Ollama local service? *(Resolution: Ollama service for v1.0 with automatic model discovery; embedded llama.cpp planned for v2.0 standalone distribution).*
+
+---
+
+### 30. Version History
+
+| Version | Date | Author | Description |
+|---|---|---|---|
+| **1.0.0** | 2026-08-07 | Principal System Architect | Complete technical architecture redesign covering multi-process topology, IPC, SQLCipher, and watchdogs. |
+| **0.9.0** | 2026-08-01 | Engineering Team | Initial technical requirements baseline. |

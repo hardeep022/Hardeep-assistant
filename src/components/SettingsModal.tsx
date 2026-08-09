@@ -1,15 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTranslation } from '../i18n/I18nContext';
 import { MODELS } from '../types';
 import type { Settings, Provider } from '../types';
+import type { SupportedLanguage } from '../i18n/translations';
+import { soundEffects } from '../utils/soundEffects';
+import { useTTS } from '../hooks/useTTS';
+import { MemoryManagerModal } from './MemoryManagerModal';
 
-type Tab = 'ollama' | 'gemini' | 'openai' | 'anthropic' | 'general';
+type Tab = 'ollama' | 'gemini' | 'openai' | 'anthropic' | 'voice' | 'privacy' | 'general';
 
 const TAB_CONFIG = [
   { id: 'ollama' as Tab,    label: 'Ollama',    icon: '🦙', badge: 'FREE' },
   { id: 'gemini' as Tab,    label: 'Gemini',    icon: '🔵', badge: 'FREE' },
   { id: 'openai' as Tab,    label: 'OpenAI',    icon: '🟢', badge: null  },
   { id: 'anthropic' as Tab, label: 'Anthropic', icon: '🟡', badge: null  },
+  { id: 'voice' as Tab,     label: 'Voice',     icon: '🎙️', badge: null  },
+  { id: 'privacy' as Tab,   label: 'Privacy',   icon: '🔒', badge: null  },
   { id: 'general' as Tab,   label: 'General',   icon: '⚙️', badge: null  },
 ];
 
@@ -25,6 +32,8 @@ interface TestState { status: TestStatus; message?: string; }
 
 export function SettingsModal() {
   const { state, dispatch } = useApp();
+  const { language, setLanguage, t } = useTranslation();
+  const { speak, isSpeaking, stop: stopTTS } = useTTS();
   const [tab, setTab] = useState<Tab>('ollama');
   const [local, setLocal] = useState<Settings>({ ...state.settings });
   const [tests, setTests] = useState<Record<string, TestState>>({
@@ -32,19 +41,33 @@ export function SettingsModal() {
     anthropic: { status: 'idle' }, ollama: { status: 'idle' },
   });
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [systemInfo, setSystemInfo] = useState<{ platform?: string; arch?: string; cpus?: number; totalMem?: number; freeMem?: number; hostname?: string } | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
 
   useEffect(() => {
-    // Reset draft values whenever the settings dialog opens or saved settings change.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const update = () => setAvailableVoices(window.speechSynthesis.getVoices());
+      update();
+      window.speechSynthesis.onvoiceschanged = update;
+    }
+  }, []);
+
+  useEffect(() => {
     setLocal({ ...state.settings });
   }, [state.isSettingsOpen, state.settings]);
 
-  // Auto-detect Ollama on open
+  // Auto-detect Ollama and system info on open
   useEffect(() => {
-    if (state.isSettingsOpen && window.nova?.getOllamaModels) {
-      window.nova.getOllamaModels(local.ollamaUrl || 'http://localhost:11434')
-        .then(models => setOllamaModels(models))
-        .catch(() => setOllamaModels([]));
+    if (state.isSettingsOpen) {
+      if (window.nova?.getOllamaModels) {
+        window.nova.getOllamaModels(local.ollamaUrl || 'http://localhost:11434')
+          .then(models => setOllamaModels(models))
+          .catch(() => setOllamaModels([]));
+      }
+      if (window.nova?.getSystemInfo) {
+        window.nova.getSystemInfo().then(setSystemInfo).catch(() => {});
+      }
     }
   }, [state.isSettingsOpen, local.ollamaUrl]);
 
@@ -69,6 +92,7 @@ export function SettingsModal() {
       const keyMap: Record<string, keyof Settings> = {
         openai: 'openaiKey', gemini: 'geminiKey', anthropic: 'anthropicKey',
       };
+      if (!window.nova?.testConnection) return;
       const key = provider === 'ollama' ? '' : (local[keyMap[provider]] as string);
       const result = await window.nova.testConnection(provider as Provider, key, local.ollamaUrl);
       setTests(p => ({
@@ -77,12 +101,38 @@ export function SettingsModal() {
           ? { status: 'ok', message: result.error ?? 'Connected!' }
           : { status: 'err', message: result.error ?? 'Failed' },
       }));
-      // Refresh Ollama models after successful test
       if (provider === 'ollama' && result.ok && window.nova?.getOllamaModels) {
         window.nova.getOllamaModels(local.ollamaUrl).then(setOllamaModels).catch(() => {});
       }
     } catch {
       setTests(p => ({ ...p, [provider]: { status: 'err', message: 'Connection error' } }));
+    }
+  };
+
+  const exportAllData = () => {
+    const backup = {
+      exportDate: new Date().toISOString(),
+      conversations: state.conversations,
+      notes: state.notes,
+      tasks: state.tasks,
+      reminders: state.reminders,
+      settings: state.settings,
+      language: language,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nova-full-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const purgeAllData = () => {
+    if (window.confirm('⚠️ WARNING: This will permanently delete ALL chats, notes, tasks, reminders, and settings. Are you completely sure?')) {
+      localStorage.clear();
+      dispatch({ type: 'CLEAR_ALL_CHATS' });
+      window.location.reload();
     }
   };
 
@@ -99,19 +149,19 @@ export function SettingsModal() {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label="Settings">
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Settings" style={{ maxWidth: '680px' }}>
         <div className="modal-header">
-          <span className="modal-title">Settings</span>
+          <span className="modal-title">{t('settings')}</span>
           <button className="modal-close" onClick={handleClose}>×</button>
         </div>
 
         <div className="modal-tabs">
-          {TAB_CONFIG.map(t => (
-            <button key={t.id} className={`modal-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
-              {t.icon} {t.label}
-              {t.badge && (
+          {TAB_CONFIG.map(tTab => (
+            <button key={tTab.id} className={`modal-tab${tab === tTab.id ? ' active' : ''}`} onClick={() => setTab(tTab.id)}>
+              {tTab.icon} {tTab.label}
+              {tTab.badge && (
                 <span style={{ fontSize: '9px', background: 'var(--success)', color: '#000', borderRadius: '3px', padding: '1px 4px', fontWeight: 700, marginLeft: '4px' }}>
-                  {t.badge}
+                  {tTab.badge}
                 </span>
               )}
             </button>
@@ -184,7 +234,7 @@ export function SettingsModal() {
           {(['gemini', 'openai', 'anthropic'] as Provider[]).map(provider => {
             if (tab !== provider) return null;
             const link = PROVIDER_LINKS[provider];
-            const t = ts(provider);
+            const tTest = ts(provider);
             return (
               <div key={provider} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div className="settings-info-box">
@@ -211,15 +261,15 @@ export function SettingsModal() {
                       spellCheck={false}
                     />
                     <button
-                      className={`settings-test-btn${t.status === 'ok' ? ' ok' : t.status === 'err' ? ' err' : ''}`}
+                      className={`settings-test-btn${tTest.status === 'ok' ? ' ok' : tTest.status === 'err' ? ' err' : ''}`}
                       onClick={() => runTest(provider)}
-                      disabled={!getKey(provider) || t.status === 'loading'}
+                      disabled={!getKey(provider) || tTest.status === 'loading'}
                     >
-                      {t.status === 'loading' ? '…' : t.status === 'ok' ? '✓ OK' : t.status === 'err' ? '✗ Error' : 'Test'}
+                      {tTest.status === 'loading' ? '…' : tTest.status === 'ok' ? '✓ OK' : tTest.status === 'err' ? '✗ Error' : 'Test'}
                     </button>
                   </div>
-                  {t.status === 'err' && t.message && (
-                    <p style={{ fontSize: '12px', color: 'var(--error)', marginTop: '4px' }}>{t.message}</p>
+                  {tTest.status === 'err' && tTest.message && (
+                    <p style={{ fontSize: '12px', color: 'var(--error)', marginTop: '4px' }}>{tTest.message}</p>
                   )}
                 </div>
 
@@ -241,9 +291,251 @@ export function SettingsModal() {
             );
           })}
 
+          {/* ── Voice & Speech ── */}
+          {tab === 'voice' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="settings-field">
+                <label className="settings-label">Voice Assistant Feature</label>
+                <p className="settings-sublabel">Enable or disable hands-free voice conversation and audio interactions</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                  <input
+                    type="checkbox"
+                    id="voiceEnabled"
+                    checked={local.voiceEnabled ?? true}
+                    onChange={e => setLocal(p => ({ ...p, voiceEnabled: e.target.checked }))}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="voiceEnabled" style={{ fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 600 }}>
+                    Enable Voice System
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-label">Speech Recognition Provider</label>
+                <p className="settings-sublabel">Choose STT engine for transcription</p>
+                <select
+                  className="settings-input"
+                  value={local.sttProvider || 'auto'}
+                  onChange={e => setLocal(p => ({ ...p, sttProvider: e.target.value as any }))}
+                  style={{ marginTop: '6px' }}
+                >
+                  <option value="auto">Automatic (Local Whisper + Web Fallback)</option>
+                  <option value="local">Local Faster-Whisper (Python Sidecar)</option>
+                  <option value="web">Web Speech API (Browser Built-in)</option>
+                </select>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-label">Preferred Text-to-Speech Voice</label>
+                <p className="settings-sublabel">Select natural voice profile for audio response playback</p>
+                <select
+                  className="settings-input"
+                  value={local.ttsVoice || ''}
+                  onChange={e => setLocal(p => ({ ...p, ttsVoice: e.target.value }))}
+                  style={{ marginTop: '6px' }}
+                >
+                  <option value="">Default Auto-Detected Voice</option>
+                  {availableVoices.map(v => (
+                    <option key={`${v.name}-${v.lang}`} value={v.name}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-label">Playback Volume</label>
+                <p className="settings-sublabel">Set audio output loudness</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={local.voiceVolume ?? 1.0}
+                    onChange={e => setLocal(p => ({ ...p, voiceVolume: parseFloat(e.target.value) }))}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-light)', width: '40px' }}>
+                    {Math.round((local.voiceVolume ?? 1.0) * 100)}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-label">Speech Synthesis Speed</label>
+                <p className="settings-sublabel">Adjust playback speed for voice responses (0.5x to 2.0x)</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.05"
+                    value={local.voiceSpeed ?? 1.0}
+                    onChange={e => setLocal(p => ({ ...p, voiceSpeed: parseFloat(e.target.value) }))}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-light)', width: '40px' }}>
+                    {(local.voiceSpeed ?? 1.0).toFixed(2)}x
+                  </span>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-label">{t('wakeWord')}</label>
+                <p className="settings-sublabel">Activate Nova hands-free by saying "Hey Nova" or "Nova"</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                  <input
+                    type="checkbox"
+                    id="wakeWordEnabled"
+                    checked={local.wakeWordEnabled ?? false}
+                    onChange={e => setLocal(p => ({ ...p, wakeWordEnabled: e.target.checked }))}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="wakeWordEnabled" style={{ fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    Enable Background Wake Word ("Hey Nova")
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-label">Test Audio & Voice Output</label>
+                <p className="settings-sublabel">Verify your speakers, sound synthesis, and acoustic earcons</p>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isSpeaking) {
+                        stopTTS();
+                      } else {
+                        speak('settings-test', 'Hello! I am Nova, your local AI operating system. Audio output is working properly.', { rate: local.voiceSpeed ?? 1.0, voiceName: local.ttsVoice, volume: local.voiceVolume ?? 1.0 });
+                      }
+                    }}
+                    className="btn-primary"
+                    style={{ fontSize: '12px', padding: '7px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {isSpeaking ? '🛑 Stop Speaking' : '🔊 Test Voice Speech'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => soundEffects.playSuccess()}
+                    style={{
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      padding: '7px 14px',
+                      borderRadius: 'var(--r-sm)',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🎵 Test Sound Chime
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-info-box">
+                🎙️ Nova voice engine combines built-in Web Speech synthesis with local Python Faster-Whisper and Kokoro neural audio for seamless offline audio communication.
+              </div>
+            </div>
+          )}
+
+          {/* ── Privacy & Data Management ── */}
+          {tab === 'privacy' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="settings-field">
+                <label className="settings-label">{t('privacy')}</label>
+                <p className="settings-sublabel">Your chats, notes, tasks, and memories are stored 100% locally on this device.</p>
+                
+                <div style={{ display: 'flex', gap: '12px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowMemoryModal(true)}
+                    className="btn-primary"
+                    style={{ fontSize: '12px', padding: '8px 14px', background: 'linear-gradient(135deg, #8b5cf6, #ec4899)' }}
+                  >
+                    🧠 Manage Stored Memories (Real Memory Engine)
+                  </button>
+
+                  <button
+                    onClick={exportAllData}
+                    className="btn-primary"
+                    style={{ fontSize: '12px', padding: '8px 14px' }}
+                  >
+                    📦 {t('exportData')} (JSON Backup)
+                  </button>
+
+                  <button
+                    onClick={purgeAllData}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#ef4444',
+                      padding: '8px 14px',
+                      borderRadius: 'var(--r-sm)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🔥 {t('deleteAllData')}
+                  </button>
+                </div>
+              </div>
+
+              {showMemoryModal && (
+                <MemoryManagerModal onClose={() => setShowMemoryModal(false)} />
+              )}
+
+              {systemInfo && (
+                <div className="settings-field">
+                  <label className="settings-label">Hardware & Device Diagnostics</label>
+                  <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                    <div>OS: <strong style={{ color: 'var(--text-primary)' }}>{systemInfo.platform} ({systemInfo.arch})</strong></div>
+                    <div>Hostname: <strong style={{ color: 'var(--text-primary)' }}>{systemInfo.hostname}</strong></div>
+                    <div>CPU Cores: <strong style={{ color: 'var(--text-primary)' }}>{systemInfo.cpus}</strong></div>
+                    <div>RAM: <strong style={{ color: 'var(--text-primary)' }}>{systemInfo.totalMem} GB Total ({systemInfo.freeMem} GB Free)</strong></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── General ── */}
           {tab === 'general' && (
             <>
+              {/* Multilingual Selector */}
+              <div className="settings-field">
+                <label className="settings-label">{t('language')}</label>
+                <p className="settings-sublabel">Select preferred display & response language</p>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                  {[
+                    { id: 'en' as SupportedLanguage, label: 'English (EN)' },
+                    { id: 'hi' as SupportedLanguage, label: 'हिन्दी (Hindi)' },
+                    { id: 'pa' as SupportedLanguage, label: 'ਪੰਜਾਬੀ (Punjabi)' },
+                  ].map(lang => (
+                    <button
+                      key={lang.id}
+                      onClick={() => setLanguage(lang.id)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: 'var(--r-xs)',
+                        background: language === lang.id ? 'var(--accent)' : 'var(--bg-input)',
+                        color: language === lang.id ? '#fff' : 'var(--text-secondary)',
+                        border: '1px solid var(--border)',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="settings-field">
                 <label className="settings-label">Default Model</label>
                 <p className="settings-sublabel">Used for new conversations</p>
@@ -278,14 +570,14 @@ export function SettingsModal() {
                 <label className="settings-label">Theme</label>
                 <p className="settings-sublabel">Choose appearance mode for the app</p>
                 <div className="theme-toggle-group">
-                  {(['dark', 'light', 'system'] as const).map(t => (
+                  {(['dark', 'light', 'system'] as const).map(tTheme => (
                     <button
-                      key={t}
-                      className={`theme-toggle-btn${(local.theme ?? 'dark') === t ? ' active' : ''}`}
-                      onClick={() => setLocal(p => ({ ...p, theme: t }))}
+                      key={tTheme}
+                      className={`theme-toggle-btn${(local.theme ?? 'dark') === tTheme ? ' active' : ''}`}
+                      onClick={() => setLocal(p => ({ ...p, theme: tTheme }))}
                     >
-                      {t === 'dark' ? '🌙' : t === 'light' ? '☀️' : '💻'}{' '}
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                      {tTheme === 'dark' ? '🌙' : tTheme === 'light' ? '☀️' : '💻'}{' '}
+                      {tTheme.charAt(0).toUpperCase() + tTheme.slice(1)}
                     </button>
                   ))}
                 </div>
@@ -304,31 +596,6 @@ export function SettingsModal() {
                 />
               </div>
 
-              <div className="settings-field" style={{ paddingTop: '8px' }}>
-                <label className="settings-label" style={{ color: 'var(--error)' }}>Danger Zone</label>
-                <button
-                  onClick={() => {
-                    if (window.confirm('Are you sure you want to delete all conversations? This action cannot be undone.')) {
-                      dispatch({ type: 'CLEAR_ALL_CHATS' });
-                      handleClose();
-                    }
-                  }}
-                  style={{
-                    background: 'rgba(248,113,113,0.1)',
-                    border: '1px solid rgba(248,113,113,0.3)',
-                    color: 'var(--error)',
-                    padding: '8px 14px',
-                    borderRadius: 'var(--r-sm)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    fontWeight: 500,
-                    width: 'fit-content',
-                  }}
-                >
-                  🗑️ Delete All Conversations
-                </button>
-              </div>
-
               <div className="settings-info-box">
                 API keys are stored encrypted using your system keychain. Never sent anywhere except to the AI provider directly.
               </div>
@@ -344,3 +611,4 @@ export function SettingsModal() {
     </div>
   );
 }
+

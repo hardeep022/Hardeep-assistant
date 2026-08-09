@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import type { Conversation, Message, Settings, AssistantMode, TaskItem, NoteItem } from '../types';
+import type { Conversation, Message, Settings, AssistantMode, TaskItem, NoteItem, ReminderItem, UserProfile, TaskStatus, ActionLogItem } from '../types';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -10,7 +10,14 @@ interface AppState {
   isSettingsOpen: boolean;
   isProductivityOpen: boolean;
   isSecurityToolsOpen: boolean;
+  isAuthOpen: boolean;
+  isActionLogsOpen: boolean;
+  isScreenGuideOpen: boolean;
+  pendingAction: any | null;
+  actionLogs: ActionLogItem[];
+  currentUser: UserProfile | null;
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   notes: NoteItem[];
 }
 
@@ -19,7 +26,10 @@ const DEFAULT_SETTINGS: Settings = {
   geminiKey: '',
   anthropicKey: '',
   ollamaUrl: 'http://localhost:11434',
-  defaultModel: 'qwen2.5-coder:1.5b',
+  defaultModel: 'llama3.2',
+  language: 'en',
+  theme: 'dark',
+  autoSpeak: false,
 };
 
 const initialState: AppState = {
@@ -29,7 +39,14 @@ const initialState: AppState = {
   isSettingsOpen: false,
   isProductivityOpen: false,
   isSecurityToolsOpen: false,
+  isAuthOpen: false,
+  isActionLogsOpen: false,
+  isScreenGuideOpen: false,
+  pendingAction: null,
+  actionLogs: [],
+  currentUser: null,
   tasks: [],
+  reminders: [],
   notes: [],
 };
 
@@ -52,26 +69,147 @@ type Action =
   | { type: 'SET_SETTINGS_OPEN'; open: boolean }
   | { type: 'SET_PRODUCTIVITY_OPEN'; open: boolean }
   | { type: 'SET_SECURITY_TOOLS_OPEN'; open: boolean }
+  | { type: 'SET_AUTH_OPEN'; open: boolean }
+  | { type: 'SET_ACTION_LOGS_OPEN'; open: boolean }
+  | { type: 'SET_SCREEN_GUIDE_OPEN'; open: boolean }
+  | { type: 'SET_PENDING_ACTION'; action: any }
+  | { type: 'ADD_ACTION_LOG'; log: ActionLogItem }
+  | { type: 'SET_CURRENT_USER'; user: UserProfile | null }
   | { type: 'ADD_TASK'; task: TaskItem }
   | { type: 'UPDATE_TASK'; task: TaskItem }
   | { type: 'DELETE_TASK'; taskId: string }
   | { type: 'TOGGLE_TASK'; taskId: string }
+  | { type: 'SET_TASK_STATUS'; taskId: string; status: TaskStatus }
+  | { type: 'ADD_REMINDER'; reminder: ReminderItem }
+  | { type: 'UPDATE_REMINDER'; reminder: ReminderItem }
+  | { type: 'DELETE_REMINDER'; reminderId: string }
+  | { type: 'TOGGLE_REMINDER'; reminderId: string }
   | { type: 'ADD_NOTE'; note: NoteItem }
   | { type: 'UPDATE_NOTE'; note: NoteItem }
   | { type: 'DELETE_NOTE'; noteId: string }
+  | { type: 'PURGE_ALL_DATA' }
   | { type: 'HYDRATE'; state: AppState };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'SET_SCREEN_GUIDE_OPEN':
+      return { ...state, isScreenGuideOpen: action.open };
+    case 'SET_PENDING_ACTION':
+
+      return { ...state, pendingAction: action.action };
+    case 'ADD_ACTION_LOG':
+      return { ...state, actionLogs: [action.log, ...(state.actionLogs || [])] };
     case 'HYDRATE':
       return {
         ...action.state,
         tasks: action.state.tasks || [],
+        reminders: action.state.reminders || [],
         notes: action.state.notes || [],
         isProductivityOpen: false,
         isSecurityToolsOpen: false,
+        isAuthOpen: false,
+        isActionLogsOpen: false,
+      };
+
+    case 'SET_AUTH_OPEN':
+      return { ...state, isAuthOpen: action.open };
+
+    case 'SET_ACTION_LOGS_OPEN':
+      return { ...state, isActionLogsOpen: action.open };
+
+    case 'SET_CURRENT_USER':
+      return { ...state, currentUser: action.user };
+
+    case 'SET_PRODUCTIVITY_OPEN':
+      return { ...state, isProductivityOpen: action.open };
+
+    case 'SET_SECURITY_TOOLS_OPEN':
+      return { ...state, isSecurityToolsOpen: action.open };
+
+    case 'ADD_TASK':
+      return { ...state, tasks: [action.task, ...state.tasks] };
+
+    case 'UPDATE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => (t.id === action.task.id ? action.task : t)),
+      };
+
+    case 'DELETE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.filter(t => t.id !== action.taskId),
+      };
+
+    case 'TOGGLE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => {
+          if (t.id !== action.taskId) return t;
+          const nextStatus = t.status === 'completed' ? 'pending' : 'completed';
+          return {
+            ...t,
+            status: nextStatus,
+            completedAt: nextStatus === 'completed' ? Date.now() : undefined,
+          };
+        }),
+      };
+
+    case 'SET_TASK_STATUS':
+      return {
+        ...state,
+        tasks: state.tasks.map(t => {
+          if (t.id !== action.taskId) return t;
+          return {
+            ...t,
+            status: action.status,
+            completedAt: action.status === 'completed' ? Date.now() : undefined,
+          };
+        }),
+      };
+
+    case 'ADD_REMINDER':
+      return { ...state, reminders: [action.reminder, ...state.reminders] };
+
+    case 'UPDATE_REMINDER':
+      return {
+        ...state,
+        reminders: state.reminders.map(r => (r.id === action.reminder.id ? action.reminder : r)),
+      };
+
+    case 'DELETE_REMINDER':
+      return {
+        ...state,
+        reminders: state.reminders.filter(r => r.id !== action.reminderId),
+      };
+
+    case 'TOGGLE_REMINDER':
+      return {
+        ...state,
+        reminders: state.reminders.map(r => (r.id === action.reminderId ? { ...r, active: !r.active } : r)),
+      };
+
+    case 'ADD_NOTE':
+      return { ...state, notes: [action.note, ...state.notes] };
+
+    case 'UPDATE_NOTE':
+      return {
+        ...state,
+        notes: state.notes.map(n => (n.id === action.note.id ? action.note : n)),
+      };
+
+    case 'DELETE_NOTE':
+      return {
+        ...state,
+        notes: state.notes.filter(n => n.id !== action.noteId),
+      };
+
+    case 'PURGE_ALL_DATA':
+      return {
+        ...initialState,
+        settings: state.settings,
       };
 
     case 'NEW_CHAT': {
@@ -198,56 +336,6 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SET_SETTINGS_OPEN':
       return { ...state, isSettingsOpen: action.open };
 
-    case 'SET_PRODUCTIVITY_OPEN':
-      return { ...state, isProductivityOpen: action.open };
-
-    case 'SET_SECURITY_TOOLS_OPEN':
-      return { ...state, isSecurityToolsOpen: action.open };
-
-    case 'ADD_TASK':
-      return { ...state, tasks: [action.task, ...state.tasks] };
-
-    case 'UPDATE_TASK':
-      return {
-        ...state,
-        tasks: state.tasks.map(t => (t.id === action.task.id ? action.task : t)),
-      };
-
-    case 'DELETE_TASK':
-      return {
-        ...state,
-        tasks: state.tasks.filter(t => t.id !== action.taskId),
-      };
-
-    case 'TOGGLE_TASK':
-      return {
-        ...state,
-        tasks: state.tasks.map(t => {
-          if (t.id !== action.taskId) return t;
-          const nextStatus = t.status === 'completed' ? 'pending' : 'completed';
-          return {
-            ...t,
-            status: nextStatus,
-            completedAt: nextStatus === 'completed' ? Date.now() : undefined,
-          };
-        }),
-      };
-
-    case 'ADD_NOTE':
-      return { ...state, notes: [action.note, ...state.notes] };
-
-    case 'UPDATE_NOTE':
-      return {
-        ...state,
-        notes: state.notes.map(n => (n.id === action.note.id ? action.note : n)),
-      };
-
-    case 'DELETE_NOTE':
-      return {
-        ...state,
-        notes: state.notes.filter(n => n.id !== action.noteId),
-      };
-
     default:
       return state;
   }
@@ -290,19 +378,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Persist to localStorage whenever state changes (excluding settings keys)
+  // Persist to localStorage with debouncing (300ms) to avoid blocking main thread during high-frequency streaming
   useEffect(() => {
-    const toSave: AppState = {
-      ...state,
-      settings: {
-        ...state.settings,
-        // Don't persist raw API keys to localStorage (they're stored in Electron's safeStorage)
-        openaiKey: '',
-        geminiKey: '',
-        anthropicKey: '',
-      },
-    };
-    localStorage.setItem('nova-state', JSON.stringify(toSave));
+    const timer = setTimeout(() => {
+      try {
+        const toSave: AppState = {
+          ...state,
+          settings: {
+            ...state.settings,
+            // Don't persist raw API keys to localStorage (they're stored in Electron's safeStorage)
+            openaiKey: '',
+            geminiKey: '',
+            anthropicKey: '',
+          },
+        };
+        localStorage.setItem('nova-state', JSON.stringify(toSave));
+      } catch (e) {
+        console.warn('Failed to save state to localStorage:', e);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [state]);
 
   // Apply theme to document

@@ -1,35 +1,55 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import type { VoiceEvent } from '../types';
+import { CompositeTTSProvider, type TTSOptions } from '../services/voice/TextToSpeechProvider';
+import { audioManager } from '../services/audio/AudioManager';
 
 export function useTTS() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [isSupported, setIsSupported] = useState(true);
+  const ttsProviderRef = useRef<CompositeTTSProvider>(new CompositeTTSProvider());
 
   useEffect(() => {
-    if (!window.nova?.onVoiceEvent) return;
-    return window.nova.onVoiceEvent((event: VoiceEvent) => {
-      if (event.event === 'speaking_stopped') setSpeakingId(null);
-    });
+    setIsSupported(ttsProviderRef.current.isSupported());
+
+    if (window.nova?.onVoiceEvent) {
+      const unsub = window.nova.onVoiceEvent((event: VoiceEvent) => {
+        if (event.event === 'speaking_stopped') {
+          setSpeakingId(null);
+          audioManager.setState('idle');
+        }
+      });
+      return () => unsub?.();
+    }
   }, []);
 
   const stop = useCallback(() => {
-    window.nova?.voiceCommand({ action: 'stop_speaking' });
+    ttsProviderRef.current.stop();
     setSpeakingId(null);
+    audioManager.setState('idle');
   }, []);
 
-  const speak = useCallback((id: string, text: string) => {
-    const cleanText = text
-      .replace(/```[\s\S]*?```/g, 'Code block omitted.')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/[*_#~]/g, '')
-      .trim();
-    if (!cleanText) return;
+  const speak = useCallback(async (id: string, text: string, options?: TTSOptions) => {
     if (speakingId === id) {
       stop();
       return;
     }
+
+    stop();
     setSpeakingId(id);
-    window.nova?.voiceCommand({ action: 'speak', text: cleanText });
+    audioManager.setState('speaking');
+
+    const effectiveVolume = options?.volume ?? audioManager.getVolume();
+    await ttsProviderRef.current.speak(text, { ...options, volume: effectiveVolume });
+
+    setSpeakingId(null);
+    audioManager.setState('idle');
   }, [speakingId, stop]);
 
-  return { speakingId, speak, stop };
+  return {
+    speakingId,
+    isSpeaking: speakingId !== null,
+    speak,
+    stop,
+    isSupported,
+  };
 }

@@ -10,8 +10,13 @@ lerna-debug.log*
 node_modules
 dist
 dist-electron
+dist-exe
+release
 dist-ssr
 *.local
+.venv
+__pycache__
+*.pyc
 
 # Editor directories and files
 .vscode/*
@@ -23,3 +28,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+

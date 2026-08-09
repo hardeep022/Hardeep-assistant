@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -75,8 +75,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         PreTag="div"
         customStyle={{
           margin: 0,
-          borderRadius: 0,
-          background: '#0d0e16',
+          borderRadius: '0 0 var(--r-sm) var(--r-sm)',
           fontSize: '13px',
           lineHeight: '1.6',
         }}
@@ -107,7 +106,7 @@ function formatTime(timestamp: number) {
     ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function MessageBubble({ message, isStreaming, streamingContent, onRegenerate, onEdit, onDelete }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, isStreaming, streamingContent, onRegenerate, onEdit, onDelete }: Props) {
   const isUser = message.role === 'user';
   const isThinking = !isUser && isStreaming && !streamingContent;
   const content = (!isUser && isStreaming) ? streamingContent || '' : message.content;
@@ -188,8 +187,9 @@ export function MessageBubble({ message, isStreaming, streamingContent, onRegene
                   code({ inline, className, children, ...props }: any) {
                     const match = /language-(\w+)/.exec(className || '');
                     const code = String(children).replace(/\n$/, '');
-                    if (!inline && match) {
-                      return <CodeBlock language={match[1]} code={code} />;
+                    const isMultiline = code.includes('\n');
+                    if (!inline && (match || isMultiline)) {
+                      return <CodeBlock language={match ? match[1] : ''} code={code} />;
                     }
                     return (
                       <code className={className} {...props}>
@@ -330,4 +330,4 @@ export function MessageBubble({ message, isStreaming, streamingContent, onRegene
       `}</style>
     </div>
   );
-}
+});

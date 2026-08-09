@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTranslation } from '../i18n/I18nContext';
 
 function formatRelativeDate(timestamp: number): string {
   const date = new Date(timestamp);
@@ -13,7 +14,8 @@ function formatRelativeDate(timestamp: number): string {
 
 export function Sidebar() {
   const { state, dispatch } = useApp();
-  const { conversations, activeConversationId } = state;
+  const { t } = useTranslation();
+  const { conversations, activeConversationId, currentUser } = state;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -50,33 +52,36 @@ export function Sidebar() {
     dispatch({ type: 'TOGGLE_PIN', conversationId: id });
   };
 
-  const filteredConversations = conversations.filter(c => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      c.title.toLowerCase().includes(q) ||
-      c.messages.some(m => m.content.toLowerCase().includes(q))
-    );
-  });
+  const { filteredConversations, groups } = useMemo(() => {
+    const filtered = conversations.filter(c => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        c.title.toLowerCase().includes(q) ||
+        c.messages.some(m => m.content.toLowerCase().includes(q))
+      );
+    });
 
-  const pinnedConversations = filteredConversations.filter(c => c.pinned);
-  const unpinnedConversations = filteredConversations.filter(c => !c.pinned);
+    const pinned = filtered.filter(c => c.pinned);
+    const unpinned = filtered.filter(c => !c.pinned);
 
-  // Group conversations by relative date (pinned always at top)
-  const groups: { label: string; items: typeof conversations }[] = [];
-  if (pinnedConversations.length > 0) {
-    groups.push({ label: '📌 Pinned', items: pinnedConversations });
-  }
-
-  const seen = new Set<string>();
-  for (const conv of unpinnedConversations) {
-    const label = formatRelativeDate(conv.updatedAt);
-    if (!seen.has(label)) {
-      seen.add(label);
-      groups.push({ label, items: [] });
+    const res: { label: string; items: typeof conversations }[] = [];
+    if (pinned.length > 0) {
+      res.push({ label: '📌 Pinned', items: pinned });
     }
-    groups[groups.length - 1].items.push(conv);
-  }
+
+    const seen = new Set<string>();
+    for (const conv of unpinned) {
+      const label = formatRelativeDate(conv.updatedAt);
+      if (!seen.has(label)) {
+        seen.add(label);
+        res.push({ label, items: [] });
+      }
+      res[res.length - 1].items.push(conv);
+    }
+    return { filteredConversations: filtered, groups: res };
+  }, [conversations, searchQuery]);
+
 
   return (
     <aside className="sidebar">
@@ -91,7 +96,7 @@ export function Sidebar() {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New Chat
+          {t('newChat')}
         </button>
 
         {/* Search Bar */}
@@ -151,7 +156,7 @@ export function Sidebar() {
             title="Tasks & Notes"
           >
             <span>⚡</span>
-            <span>Tasks</span>
+            <span>{t('tasks')}</span>
           </button>
           <button
             onClick={() => dispatch({ type: 'SET_SECURITY_TOOLS_OPEN', open: true })}
@@ -172,7 +177,7 @@ export function Sidebar() {
             title="Cybersecurity Toolkit"
           >
             <span>🛡️</span>
-            <span>Security</span>
+            <span>{t('cybersecurity')}</span>
           </button>
         </div>
       </div>
@@ -272,19 +277,47 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {/* User Account / Profile Button */}
+        <button
+          className="settings-btn"
+          onClick={() => dispatch({ type: 'SET_AUTH_OPEN', open: true })}
+          style={{ width: '100%', justifyContent: 'flex-start', gap: '8px' }}
+        >
+          <span style={{ fontSize: '14px' }}>👤</span>
+          <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {currentUser ? currentUser.displayName : t('login')}
+          </span>
+          {currentUser && (
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }} />
+          )}
+        </button>
+
+        {/* Action Audit Logs Button */}
+        <button
+          className="settings-btn"
+          onClick={() => dispatch({ type: 'SET_ACTION_LOGS_OPEN', open: true })}
+          style={{ width: '100%', justifyContent: 'flex-start', gap: '8px' }}
+        >
+          <span style={{ fontSize: '14px' }}>📜</span>
+          <span>{t('auditLogs')}</span>
+        </button>
+
+        {/* Settings Button */}
         <button
           className="settings-btn"
           onClick={() => dispatch({ type: 'SET_SETTINGS_OPEN', open: true })}
           id="settings-btn"
+          style={{ width: '100%', justifyContent: 'flex-start', gap: '8px' }}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-          Settings
+          {t('settings')}
         </button>
       </div>
     </aside>
   );
 }
+
