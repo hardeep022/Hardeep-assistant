@@ -28,7 +28,12 @@ export function useChat() {
 
       if (!cleanText) return;
 
+      if (window.nova?.voiceCommand) {
+        window.nova.voiceCommand({ action: 'speak', text: cleanText });
+      }
+
       const detected = detectLanguage(cleanText);
+
       const synth = window.speechSynthesis;
       synth.cancel();
 

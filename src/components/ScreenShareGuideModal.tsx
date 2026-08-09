@@ -64,12 +64,15 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
     }
   }, [activeSource]);
 
-  // Initial load when modal opens
+  // Initial load when modal opens - instant single-click live capture
   useEffect(() => {
     if (isOpen) {
-      fetchSources();
+      fetchSources().then(() => {
+        captureFrame();
+      });
     }
-  }, [isOpen, fetchSources]);
+  }, [isOpen, fetchSources, captureFrame]);
+
 
   // Capture screen frame using Electron IPC or Web MediaDevices fallback
   const captureFrame = useCallback(async (sourceId?: string): Promise<CapturedFrame | null> => {
@@ -168,15 +171,29 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
     };
   }, [autoScanInterval, isOpen, activeSource, captureFrame]);
 
-  // Speak guidance text using Nova voice player
+  // Speak guidance text out loud using Nova voice synthesis
   const speakGuidance = (text: string) => {
-    if (voiceEnabled && window.nova?.voiceCommand) {
+    if (!voiceEnabled || !text.trim()) return;
+    const cleanText = text.replace(/[*#`_~>|]/g, '').trim();
+    if (!cleanText) return;
+
+    if (window.nova?.voiceCommand) {
       window.nova.voiceCommand({
         action: 'speak',
-        text: text.replace(/[*#`_]/g, ''),
+        text: cleanText,
       });
     }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1.05;
+        window.speechSynthesis.speak(utterance);
+      } catch {}
+    }
   };
+
 
   // Generate Step-by-Step Plan for Task
   const handleStartTaskGuidance = async (promptText?: string) => {
