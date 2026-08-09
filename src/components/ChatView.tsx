@@ -676,20 +676,8 @@ export function ChatView({ onAgentPrompt }: ChatViewProps = {}) {
           <div>
             <p className="empty-heading">{currentModeConfig.name} {t('assistant')}</p>
             <p className="empty-sub">
-              {currentModeConfig.description}
+              How can Hardeep Assistant help you today?
             </p>
-          </div>
-          <div className="suggestions-grid">
-            {suggestions.map(s => (
-              <button
-                key={s.text}
-                className="suggestion-card"
-                onClick={() => handleSuggestion(s.text)}
-              >
-                <span className="suggestion-icon">{s.icon}</span>
-                <span className="suggestion-text">{s.text}</span>
-              </button>
-            ))}
           </div>
         </div>
       ) : (
