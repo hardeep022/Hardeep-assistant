@@ -64,16 +64,6 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
     }
   }, [activeSource]);
 
-  // Initial load when modal opens - instant single-click live capture
-  useEffect(() => {
-    if (isOpen) {
-      fetchSources().then(() => {
-        captureFrame();
-      });
-    }
-  }, [isOpen, fetchSources, captureFrame]);
-
-
   // Capture screen frame using Electron IPC or Web MediaDevices fallback
   const captureFrame = useCallback(async (sourceId?: string): Promise<CapturedFrame | null> => {
     const targetId = sourceId || activeSource?.id;
@@ -98,9 +88,8 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
     }
 
     // 2. Web Standard Fallback: navigator.mediaDevices.getDisplayMedia
-    if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
       try {
-        toast.info('Requesting screen share permission…');
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: { cursor: 'always' } as any,
           audio: false,
@@ -124,7 +113,6 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
           const dataUrl = canvas.toDataURL('image/png');
           const base64Data = dataUrl.split(',')[1] || '';
 
-          // Stop stream tracks after frame snapshot
           stream.getTracks().forEach(t => t.stop());
 
           const frame: CapturedFrame = {
@@ -136,7 +124,6 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
             timestamp: Date.now(),
           };
           setCapturedFrame(frame);
-          toast.success('Captured screen snapshot successfully!');
           return frame;
         }
         stream.getTracks().forEach(t => t.stop());
@@ -145,12 +132,20 @@ export function ScreenShareGuideModal({ isOpen, onClose }: ScreenShareGuideModal
           toast.error(`Screen share error: ${err.message || String(err)}`);
         }
       }
-    } else {
-      toast.error('Screen sharing API is not supported in this browser runtime.');
     }
 
     return null;
   }, [activeSource, toast]);
+
+  // Initial load when modal opens - instant single-click live capture
+  useEffect(() => {
+    if (isOpen) {
+      fetchSources().then(() => {
+        captureFrame();
+      });
+    }
+  }, [isOpen, fetchSources, captureFrame]);
+
 
 
   // Auto scan interval effect
