@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Hardeep Assistant — Localhost Launcher</title>
+  <style>
+    :root {
+      --bg: #08090e;
+      --card-bg: rgba(18, 20, 32, 0.95);
+      --accent: #8b5cf6;
+      --accent-light: #c084fc;
+      --cyan: #06b6d4;
+      --text: #f3f4f6;
+      --text-muted: #94a3b8;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image: 
+        radial-gradient(circle at 15% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 40%);
+    }
+    .launcher-card {
+      width: 90%;
+      max-width: 520px;
+      background: var(--card-bg);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 20px;
+      padding: 36px 30px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(168, 85, 247, 0.2);
+      text-align: center;
+      backdrop-filter: blur(16px);
+    }
+    .logo-badge {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      margin: 0 auto 16px;
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      margin: 0 0 8px;
+      background: linear-gradient(135deg, #ffffff, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin: 0 0 24px;
+      line-height: 1.5;
+    }
+    .open-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 14px 24px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+      background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      border: none;
+      border-radius: 12px;
+      text-decoration: none;
+      box-shadow: 0 8px 25px rgba(139, 92, 246, 0.4);
+      transition: all 0.2s ease;
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+    .open-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(139, 92, 246, 0.6);
+      opacity: 0.95;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 20px;
+      font-size: 12px;
+      color: #4ade80;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    .pulse-green {
+      width: 8px;
+      height: 8px;
+      background: #4ade80;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #4ade80;
+    }
+    .footer-note {
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 16px;
+    }
+    code {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent-light);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="launcher-card">
+    <div class="logo-badge">✦</div>
+    <h1>Hardeep Assistant</h1>
+    <p>Launch Nova AI OS web client directly on localhost port 5173</p>
+
+    <!-- Main Localhost Link Button -->
+    <a href="http://localhost:5173" class="open-btn" id="open-link" target="_blank" rel="noopener">
+      🚀 Open http://localhost:5173
+    </a>
+
+    <div className="status-badge" style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px;">
+      <span class="pulse-green"></span>
+      <span>Localhost Dev Server Target: <code>http://localhost:5173</code></span>
+    </div>
+
+    <div class="footer-note">
+      To start the server, open terminal and run: <code>npm run dev</code><br>
+      To build Windows app executable, run: <code>npm run dist</code>
+    </div>
+  </div>
+
+  <script>
+    // Auto redirect countdown option
+    let count = 3;
+    const btn = document.getElementById('open-link');
+    const timer = setInterval(() => {
+      count--;
+      if (count > 0) {
+        btn.textContent = `🚀 Redirecting to http://localhost:5173 (${count}s)...`;
+      } else {
+        clearInterval(timer);
+        window.location.href = 'http://localhost:5173';
+      }
+    }, 1000);
+  </script>
+</body>
+</html>
