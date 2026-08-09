@@ -16,6 +16,7 @@
     "files": [
       "dist/**",
       "dist-electron/**",
+      "Open-Localhost.html",
       "package.json"
     ],
     "extraResources": [

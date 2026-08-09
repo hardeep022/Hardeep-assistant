@@ -285,7 +285,10 @@ export function ChatView({ onAgentPrompt }: ChatViewProps = {}) {
   const suggestions = MODE_SUGGESTIONS[currentMode] || MODE_SUGGESTIONS.general;
 
   return (
-    <main className="chat-view">
+    <main className="chat-view" style={{ position: 'relative' }}>
+      {/* Background Watermark */}
+      <div className="bg-watermark-text">HARDEEP SINGH</div>
+
       {/* Header */}
       {activeConversation && (
         <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
