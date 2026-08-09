@@ -287,7 +287,8 @@ export function ChatView({ onAgentPrompt }: ChatViewProps = {}) {
   return (
     <main className="chat-view" style={{ position: 'relative' }}>
       {/* Background Watermark */}
-      <div className="bg-watermark-text">HARDEEP SINGH</div>
+      <div className="bg-watermark-text">HARDEEP</div>
+
 
       {/* Header */}
       {activeConversation && (
